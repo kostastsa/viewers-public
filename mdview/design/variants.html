@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>mdview dark variants</title>
+<style>
+:root{color-scheme:dark}
+/* ---- variant tokens ---- */
+[data-v="ink"]{--bg:#161513;--panel:#1d1c19;--card:#23211d;--fg:#e4dfd3;--muted:#8f897b;--border:#33302a;--accent:#d9a45b;
+  --hl:#5a4620;--code:#1f1d19;--ins:#8fcf9d;--insbg:#1f3427;--del:#e58b7e;--delbg:#3b2421;
+  --body:"Charter","Iowan Old Style","Georgia",serif;--head:"Charter","Iowan Old Style","Georgia",serif;--ui:-apple-system,"Helvetica Neue",sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,monospace;--measure:640px;--lh:1.72;--fs:18px;--r:3px;--shadow:none;--hw:600}
+[data-v="slate"]{--bg:#0e1116;--panel:#141922;--card:#1a2130;--fg:#d7dde8;--muted:#7d8799;--border:#252d3b;--accent:#7c9cff;
+  --hl:#2d3a6b;--code:#10151d;--ins:#6fd9a0;--insbg:#12301f;--del:#ff8f8f;--delbg:#3a1a1c;
+  --body:-apple-system,"SF Pro Text","Helvetica Neue",sans-serif;--head:-apple-system,"SF Pro Display","Helvetica Neue",sans-serif;--ui:-apple-system,"Helvetica Neue",sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,monospace;--measure:720px;--lh:1.65;--fs:16px;--r:10px;--shadow:0 1px 2px #0006,0 4px 14px #0004;--hw:650}
+[data-v="mono"]{--bg:#121413;--panel:#171a18;--card:#1c201d;--fg:#cfd6d0;--muted:#7a857d;--border:#2a312c;--accent:#4fd1a5;
+  --hl:#1f4a3b;--code:#0f1210;--ins:#7fe3a8;--insbg:#143024;--del:#ff9a8a;--delbg:#36201d;
+  --body:"Iowan Old Style","Charter",Georgia,serif;--head:ui-monospace,"SF Mono",Menlo,monospace;--ui:ui-monospace,"SF Mono",Menlo,monospace;
+  --mono:ui-monospace,"SF Mono",Menlo,monospace;--measure:680px;--lh:1.7;--fs:17px;--r:0px;--shadow:none;--hw:500}
+[data-v="mix"]{--bg:#111214;--panel:#16181b;--card:#1c1f23;--fg:#d6d9de;--muted:#80858d;--border:#2a2d32;--accent:#8a9bd6;
+  --hl:#363c53;--code:#131518;--ins:#86c7a4;--insbg:#18281f;--del:#e09c9c;--delbg:#33201f;
+  --body:"Charter","Iowan Old Style","Georgia",serif;--head:"Charter","Iowan Old Style","Georgia",serif;--ui:ui-monospace,"SF Mono",Menlo,monospace;
+  --mono:ui-monospace,"SF Mono",Menlo,monospace;--measure:640px;--lh:1.72;--fs:18px;--r:0px;--shadow:none;--hw:600}
+[data-v="mix"] article pre,[data-v="mix"] article code{border-radius:3px}
+[data-v="mix"] nav,[data-v="mix"] aside,[data-v="mix"] header{font-size:12.5px}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px var(--ui)}
+header{display:flex;gap:16px;align-items:center;height:44px;padding:0 18px;border-bottom:1px solid var(--border);background:var(--panel);position:sticky;top:0;z-index:2}
+header .t{color:var(--muted)} header b{font-weight:600}
+header .sw{margin-left:auto;display:flex;gap:6px}
+header button,.btn{font:inherit;color:var(--fg);background:transparent;border:1px solid var(--border);border-radius:var(--r);padding:4px 12px;cursor:pointer}
+header button[aria-pressed=true]{background:var(--accent);color:var(--bg);border-color:var(--accent);font-weight:600}
+.wrap{display:grid;grid-template-columns:220px minmax(0,1fr) 300px;min-height:calc(100vh - 44px)}
+nav{padding:22px 16px;border-right:1px solid var(--border);color:var(--muted);font-size:13px;line-height:2}
+nav .on{color:var(--accent)} nav .sub{padding-left:14px}
+nav h6{margin:0 0 8px;font-size:11px;letter-spacing:.1em;text-transform:uppercase;font-weight:600}
+main{padding:56px 40px 120px;display:flex;justify-content:center}
+article{max-width:var(--measure);width:100%;font:var(--fs)/var(--lh) var(--body)}
+article h1{font:var(--hw) 2.1em/1.2 var(--head);margin:0 0 .3em;letter-spacing:-.01em}
+article h2{font:var(--hw) 1.35em/1.3 var(--head);margin:2em 0 .5em}
+article p{margin:0 0 1.1em}
+article a{color:var(--accent);text-decoration-color:color-mix(in srgb,var(--accent) 45%,transparent)}
+article code{font:.86em var(--mono);background:var(--code);padding:.15em .4em;border-radius:max(var(--r),2px)}
+article pre{background:var(--code);border:1px solid var(--border);border-radius:var(--r);padding:14px 16px;overflow:auto;font:13.5px/1.55 var(--mono)}
+article pre code{background:none;padding:0}
+article blockquote{margin:1.2em 0;padding:.1em 1.1em;border-left:3px solid var(--accent);color:var(--muted)}
+article table{border-collapse:collapse;width:100%;font-size:.9em;margin:1.2em 0}
+article th,article td{padding:7px 12px;border-bottom:1px solid var(--border);text-align:left}
+article th{color:var(--muted);font:600 .8em var(--ui);text-transform:uppercase;letter-spacing:.06em}
+.math{text-align:center;font:italic 1.15em "STIX Two Text","Times New Roman",serif;margin:1.2em 0;color:var(--fg)}
+mark{background:var(--hl);color:inherit;padding:.05em .15em;border-radius:2px}
+mark.on{outline:1px solid var(--accent)}
+ins{background:var(--insbg);color:var(--ins);text-decoration:none}del{background:var(--delbg);color:var(--del)}
+aside{padding:22px 16px;border-left:1px solid var(--border);display:flex;flex-direction:column;gap:12px}
+aside h6{margin:0;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:600;display:flex;justify-content:space-between}
+.c{background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:11px 13px;box-shadow:var(--shadow);font-size:13px;line-height:1.5}
+.c.on{border-color:var(--accent)}
+.c .who{color:var(--muted);font-size:11.5px;margin-bottom:3px}
+.c .claude{margin-top:9px;padding-top:9px;border-top:1px solid var(--border)}
+.c .claude .who{color:var(--accent)}
+.c .act{margin-top:8px;display:flex;gap:6px}
+.c .act .btn{padding:2px 10px;font-size:12px}
+.c .act .btn.p{background:var(--accent);color:var(--bg);border-color:var(--accent);font-weight:600}
+.pop{position:absolute;background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:5px 11px;font-size:12.5px;box-shadow:0 6px 20px #0007}
+@media(max-width:1000px){.wrap{grid-template-columns:1fr}nav,aside{display:none}}
+</style></head>
+<body data-v="ink">
+<header><b>mdview</b><span class="t">notes / kalman-filter.md</span>
+ <div class="sw" id="sw"><button data-v="mix">D · Mix</button><button data-v="ink">A · Ink</button><button data-v="slate">B · Slate</button><button data-v="mono">C · Mono</button></div></header>
+<div class="wrap">
+<nav><h6>Contents</h6>
+ <div>Setup</div><div class="on">Prediction step</div><div class="sub">Covariance</div><div class="sub">Gain</div><div>Results</div><div>References</div></nav>
+<main><article>
+ <h1>The Kalman filter, derived</h1>
+ <p style="color:var(--muted)">Notes on the recursive update, with the <a href="#">original derivation</a> and a worked example.</p>
+ <h2>Prediction step</h2>
+ <p>At each step the filter <mark class="on">propagates the mean and covariance</mark> through the linear dynamics, then corrects them with the measurement. The correction is weighted by the gain <code>K</code>, which is <del>large when the prior is uncertain</del><ins>large when the prior is more uncertain than the sensor</ins>.</p>
+ <div class="math">P<sub>k|k−1</sub> = F P<sub>k−1</sub> Fᵀ + Q</div>
+ <blockquote>The gain is just a ratio of uncertainties; everything else is bookkeeping.</blockquote>
+ <pre><code>def update(x, P, z, H, R):
+    S = H @ P @ H.T + R
+    K = P @ H.T @ np.linalg.inv(S)
+    return x + K @ (z - H @ x), (I - K @ H) @ P</code></pre>
+ <h2>Results</h2>
+ <table><tr><th>Filter</th><th>RMSE</th><th>Time</th></tr><tr><td>Kalman</td><td>0.21</td><td>1.2 ms</td></tr><tr><td>Particle (1k)</td><td>0.19</td><td>48 ms</td></tr></table>
+ <p>The two agree closely, so the cheaper filter wins <mark>for this problem</mark>.</p>
+</article></main>
+<aside><h6>Comments <span>2 open</span></h6>
+ <div class="c on"><div class="who">You · 2 min ago</div>Why is the gain large here? Add a sentence on the sensor noise.
+  <div class="claude"><div class="who">Claude</div>Suggested a rewording: the gain is large when the prior is more uncertain than the sensor.</div>
+  <div class="act"><span class="btn p">Accept</span><span class="btn">Reject</span></div></div>
+ <div class="c"><div class="who">You · yesterday</div>Is 1k particles enough? Check against 10k.<div class="act"><span class="btn">Resolve</span></div></div>
+</aside></div>
+<script>
+const b=document.body,sw=document.getElementById('sw');
+function set(v){b.dataset.v=v;sw.querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',x.dataset.v===v));try{localStorage.v=v}catch(e){}}
+sw.onclick=e=>{if(e.target.dataset.v)set(e.target.dataset.v)};
+set((()=>{try{return localStorage.v}catch(e){}})()||'mix');
+</script></body></html>

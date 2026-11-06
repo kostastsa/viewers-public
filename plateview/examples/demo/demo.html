@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<title>Optimizers on CIFAR-10</title>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="eyebrow">example plate · invented numbers · runs.csv, curves.csv, vision_grid.csv</div>
+    <h1>Optimizers on CIFAR-10</h1>
+    <p class="lede">Six optimizers, five seeds each, ResNet-18 for 50 epochs. Every table, chart and figure reads its file
+      live: change a CSV file, and the plate changes. The plate holds no data.</p>
+  </header>
+
+  <div class="kpis" id="kpis"></div>
+
+  <div class="controls">
+    <div class="ctl"><span class="ctl-label">Curves</span><div id="which"></div></div>
+    <div class="ctl"><span class="ctl-label">Band</span><div id="band"></div></div>
+  </div>
+
+  <div class="row2">
+    <section class="panel"><h2>Test accuracy <span class="tag">curves.csv</span></h2><div id="chart"></div></section>
+    <section class="panel"><h2>Results <span class="tag">runs.csv</span></h2><div id="table"></div></section>
+  </div>
+
+  <section class="panel"><h2>Ten models, ten datasets <span class="tag">vision_grid.csv</span></h2><div id="grid"></div></section>
+
+  <div class="row3">
+    <div id="f1"></div><div id="f2"></div><div id="f3"></div>
+  </div>
+
+  <footer>
+    <p class="note">Mean ± standard deviation over 5 seeds. <b>★</b> marks the best value of a column.</p>
+    <div>Source: <code>plateview/examples/demo/</code>.</div>
+  </footer>
+</div>
+<script>
+// the stat cards: from runs.csv, so they change with it
+pv.watch('runs.csv', d => {
+  const r = pv.records(d), best = r.reduce((a, b) => (b.acc > a.acc ? b : a)), fast = r.reduce((a, b) => (b.time < a.time ? b : a));
+  document.getElementById('kpis').innerHTML =
+    `<div class="kpi"><div class="l">Best accuracy</div><div class="v">${best.acc}<small>%</small></div><div class="s">${best.optimizer}</div></div>` +
+    `<div class="kpi"><div class="l">Fastest epoch</div><div class="v">${fast.time}<small>s</small></div><div class="s">${fast.optimizer}</div></div>` +
+    `<div class="kpi"><div class="l">Optimizers</div><div class="v">${r.length}</div><div class="s">5 seeds each</div></div>`;
+});
+
+// the chart: the controls pick the optimizers and the band
+const state = {which: 'all', band: 'sd'};
+function drawChart() {
+  pv.chart('#chart', 'curves.csv', {type: 'line', x: 'epoch', y: 'acc', color: 'optimizer', 'y-min': 60, 'y-max': 96,
+    err: state.band === 'sd' ? 'acc_sd' : null, 'x-label': 'Epoch', 'y-label': 'Test accuracy (%)',
+    prepare: d => state.which === 'all' ? d : pv.fromRecords(pv.records(d).filter(r => r.optimizer !== 'SGD'), d.columns)});
+}
+pv.seg('#which', {options: [['all', 'All'], ['adaptive', 'Without SGD']], value: 'all', onChange: v => { state.which = v; drawChart(); }});
+pv.seg('#band', {options: [['sd', '± sd'], ['none', 'None']], value: 'sd', onChange: v => { state.band = v; drawChart(); }});
+drawChart();
+
+pv.table('#table', 'runs.csv', {cols: 'optimizer,acc,loss,time,notes', sd: 'acc:acc_sd loss:loss_sd',
+  labels: 'optimizer: Optimizer | acc: Accuracy (%) | loss: Test loss | time: Epoch (s) | notes: Notes',
+  best: 'acc:max loss:min time:min', sort: 'acc:desc', dec: 'acc:1 loss:3 time:1'});
+pv.grid('#grid', 'vision_grid.csv', {rows: 'model', columns: 'dataset', value: 'acc_mean', sd: 'acc_sd',
+  'row-groups': 'family', 'col-groups': 'group', best: 'col:max', color: 'heat', summary: 'mean rank', height: 460});
+pv.figure('#f1', 'fig/confusion_adamw.png', {caption: '(a) Confusion matrix, AdamW'});
+pv.figure('#f2', 'fig/gradnorm_e10.pdf', {caption: '(b) Gradient norms, epoch 10 (a PDF figure)'});
+pv.figure('#f3', 'fig/lr_scatter.png', {caption: '(c) Learning rate against accuracy'});
+</script>
+</body>
+</html>

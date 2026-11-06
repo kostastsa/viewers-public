@@ -1,0 +1,26 @@
+% A slides sample for pdfview: landscape pages, colors, a block, and maths.
+\documentclass{beamer}
+\usetheme{Madrid}
+\title{A Short Talk}
+\author{D. Speaker}
+\date{November 2026}
+\begin{document}
+\frame{\titlepage}
+\begin{frame}{The problem}
+\begin{itemize}
+\item We want a bound for $\Pr(|S_n - \mathbb{E} S_n| \ge t)$.
+\item The variables are independent and bounded.
+\end{itemize}
+\begin{block}{Theorem}
+$\Pr(|S_n - \mathbb{E} S_n| \ge t) \le 2\exp\left(-2t^2 / \sum_i (b_i - a_i)^2\right)$.
+\end{block}
+\end{frame}
+\begin{frame}{Results}
+\begin{columns}
+\column{0.5\textwidth}
+\begin{tabular}{rr} $n$ & bound \\\hline 10 & 0.330 \\ 100 & 0.271 \\ 1000 & 0.081 \end{tabular}
+\column{0.5\textwidth}
+\textcolor{red}{Red text}, \textcolor{blue}{blue text} and \textbf{bold text} on a slide.
+\end{columns}
+\end{frame}
+\end{document}

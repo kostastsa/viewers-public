@@ -1,0 +1,25 @@
+{
+  "app": "viewkit",
+  "apps": {
+    "pdfview": [
+      "python3 tests/test_ops.py",
+      "uv run --with playwright python tests/browser_test.py",
+      "uv run --with playwright python tests/samples_test.py"
+    ],
+    "mdview": [
+      "uv run --with playwright python tests/chat_browser_test.py"
+    ],
+    "pyview": [
+      "python3 tests/chat_test.py",
+      "uv run --with playwright python tests/chat_browser_test.py"
+    ],
+    "pageview": [
+      "python3 tests/test_ops.py",
+      "uv run --with playwright python tests/browser_test.py"
+    ],
+    "plateview": [
+      "python3 tests/test_ops.py",
+      "uv run --with playwright python tests/browser_test.py"
+    ]
+  }
+}

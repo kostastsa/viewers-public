@@ -1,0 +1,20 @@
+{
+  "app": "pdfview",
+  "port_env": "PDFVIEW_PORT",
+  "claude_env": "PDFVIEW_CLAUDE",
+  "tests": [
+    "python3 tests/test_ops.py",
+    "uv run --with playwright python tests/browser_test.py",
+    "uv run --with playwright python tests/samples_test.py"
+  ],
+  "companions": [
+    ".pdfview/{name}.json"
+  ],
+  "default_file": "tests/fixture.pdf",
+  "samples": [
+    "samples/paper.pdf",
+    "samples/twocolumn.pdf",
+    "samples/slides.pdf",
+    "samples/scan.pdf"
+  ]
+}
