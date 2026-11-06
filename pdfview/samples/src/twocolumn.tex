@@ -1,0 +1,23 @@
+% A two-column sample for pdfview: text selection across columns, equations in a column, a wide figure.
+\documentclass[10pt,twocolumn]{article}
+\usepackage[margin=0.8in]{geometry}
+\usepackage{amsmath,lipsum}
+\usepackage[hidelinks]{hyperref}
+\title{Two Columns: A Layout Sample}
+\author{C. Author}
+\date{}
+\begin{document}
+\maketitle
+\section{Method}\label{sec:method}
+The model has two parts, the encoder and the decoder, see Equation~\eqref{eq:loss}.
+\lipsum[1]
+\begin{equation}\label{eq:loss}
+  \mathcal{L}(\theta) = \frac{1}{N}\sum_{i=1}^{N} \lVert x_i - g_\theta(f_\theta(x_i)) \rVert^2 .
+\end{equation}
+\lipsum[2-3]
+\section{Experiments}
+We train for 100 epochs, as Section~\ref{sec:method} describes.
+\lipsum[4-6]
+\section{Conclusion}
+\lipsum[7-8]
+\end{document}

@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>plateview</title>
+<link rel="icon" type="image/png" href="/kit/icons/plate.png">
+<style>
+/* The frame of a plate: a thin bar, and the plate in a sandboxed frame below it. At / the list of plates. */
+:root{--bg:#f3f5f7;--surface:#ffffff;--fg:#17202a;--muted:#5a6774;--line:#d5dce2;--accent:#2357a4;--accent-soft:#e3ebf7;
+  --danger:#b3261e;--danger-soft:#fbe9e7;--good:#17845a;--ui:system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,monospace;color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#11161b;--surface:#182029;--fg:#e5eaef;--muted:#93a0ad;
+  --line:#2b3540;--accent:#82aaeb;--accent-soft:#1d2b40;--danger:#ff8f85;--danger-soft:#3a1f1d;--good:#5fd09d;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#11161b;--surface:#182029;--fg:#e5eaef;--muted:#93a0ad;--line:#2b3540;--accent:#82aaeb;
+  --accent-soft:#1d2b40;--danger:#ff8f85;--danger-soft:#3a1f1d;--good:#5fd09d;color-scheme:dark}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--fg);font:13px/1.4 var(--ui);display:flex;flex-direction:column}
+button,a.btn{font:inherit;color:inherit;background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:3px 10px;cursor:pointer;text-decoration:none}
+button:hover,a.btn:hover{border-color:var(--accent);color:var(--accent)}
+button.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+button.danger:hover{border-color:var(--danger);color:var(--danger)}
+button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+header{display:flex;gap:10px;align-items:center;padding:6px 12px;border-bottom:1px solid var(--line);background:var(--surface);min-height:40px;white-space:nowrap}
+header a.home{color:var(--muted);text-decoration:none;font-weight:600}
+header .title{font-weight:600;overflow:hidden;text-overflow:ellipsis;min-width:0}
+header .grow{flex:1}
+.chip{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-radius:10px;padding:1px 8px;color:var(--muted)}
+.chip.kept{border-color:var(--accent);color:var(--accent)}
+#live{width:8px;height:8px;border-radius:50%;background:var(--good);flex:none}
+#live.off{background:var(--danger)}
+#frame{flex:1;border:0;width:100%;background:var(--bg);display:block}
+#err{display:none;background:var(--danger-soft);color:var(--danger);padding:6px 12px;border-bottom:1px solid var(--line);font-family:var(--mono);font-size:12px;white-space:pre-wrap}
+#err.on{display:block}
+#err button{margin-left:10px;font-size:11px;padding:0 8px}
+main.list{flex:1;overflow:auto;padding:28px 16px}
+main.list .in{max-width:900px;margin:0 auto;display:grid;gap:14px}
+main.list h1{font:600 24px/1.2 var(--ui);margin:0}
+main.list p{color:var(--muted);margin:0}
+table{border-collapse:collapse;width:100%;background:var(--surface);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
+th{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600}
+tr:last-child td{border-bottom:0}
+td.t a{color:var(--fg);font-weight:600;text-decoration:none}
+td.t a:hover{color:var(--accent)}
+td .id{font-family:var(--mono);font-size:11px;color:var(--muted)}
+td.acts{text-align:right;white-space:nowrap}
+.toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--fg);color:var(--bg);border-radius:6px;padding:6px 12px;z-index:9}
+</style>
+</head>
+<body>
+<header>
+  <a class="home" href="/" title="All plates">plateview</a>
+  <span class="title" id="title"></span>
+  <span class="chip" id="state" hidden></span>
+  <span id="live" title="Connected. The plate updates when its files change."></span>
+  <span class="grow"></span>
+  <span id="tools" hidden>
+    <button id="themeBtn" type="button" title="Light, dark, or as the system">◐ Auto</button>
+    <button id="keepBtn" type="button" title="Keep this plate: it is not deleted">Keep</button>
+    <button id="exportBtn" type="button" title="Save one HTML file with the data inside">Export</button>
+    <button id="deleteBtn" type="button" class="danger" title="Delete this plate now">Delete</button>
+  </span>
+</header>
+<div id="err"></div>
+<script src="/kit/kit.js"></script>
+<script src="/shell.js"></script>
+</body>
+</html>

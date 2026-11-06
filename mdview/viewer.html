@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>mdview</title>
+<link rel="icon" type="image/png" href="/kit/icons/md.png">
+<link rel="stylesheet" href="/kit/kit.css">
+<style>
+:root{color-scheme:dark;--bg:#111214;--fg:#d6d9de;--muted:#80858d;--panel:#16181b;--border:#2a2d32;--accent:#8a9bd6;
+  --hl:#363c53;--hl2:#59648e;--ok:#1f3a2e;--ok2:#2f5a46;--claude:#1c1f23;--code:#131518;--warn:#e09c9c;
+  --del:#e09c9c;--delbg:#33201f;--ins:#86c7a4;--insbg:#18281f;
+  --ui:ui-monospace,"SF Mono",Menlo,monospace}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg)}
+header{position:sticky;top:0;z-index:5;display:flex;gap:12px;align-items:center;padding:8px 16px;
+  font:12px var(--ui);color:var(--muted);background:var(--bg);border-bottom:1px solid var(--border)}
+header a{color:var(--accent);text-decoration:none}
+header .name{color:var(--fg);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+header .grow{flex:1}
+#live{display:inline-block;width:8px;height:8px;border-radius:50%;background:#3aa655;margin-right:6px}
+#live.off{background:var(--warn)}
+main{display:grid;grid-template-columns:220px minmax(0,1fr) 300px;gap:32px;padding:32px 16px}
+
+/* ----- document ----- */
+#doc{grid-column:2;width:100%;justify-self:center;min-width:0;max-width:640px;font:18px/1.72 Charter,"Iowan Old Style",Georgia,serif}
+#doc h1,#doc h2,#doc h3,#doc h4{line-height:1.25;margin:1.4em 0 .5em}
+#doc .doc-title{margin-top:0}
+#doc a{color:var(--accent)}
+#doc img{max-width:100%}
+#doc code{font:.88em ui-monospace,Menlo,monospace;background:var(--code);padding:.1em .3em;border-radius:3px}
+#doc pre{background:var(--code);padding:12px 14px;border-radius:3px;overflow:auto;line-height:1.45}
+#doc pre code{background:none;padding:0}
+#doc mjx-container[display="true"]{overflow-x:auto;overflow-y:hidden;max-width:100%}
+#doc blockquote{margin:1em 0;padding:0 1em;border-left:3px solid var(--border);color:var(--muted)}
+#doc table{border-collapse:collapse;margin:1em 0;font-size:.95em}
+#doc th,#doc td{border:1px solid var(--border);padding:4px 10px;text-align:left}
+#doc hr{border:0;border-top:1px solid var(--border);margin:2em 0}
+#doc .footnotes{font-size:.9em;color:var(--muted)}
+mark.c{background:var(--hl);color:inherit;cursor:pointer;transition:background .3s}
+mark.c.answered{background:var(--ok)}
+mark.c.hover,mark.c.flash{background:var(--hl2)}
+mark.c.answered.hover,mark.c.answered.flash{background:var(--ok2)}
+#doc .math.cm{background:var(--hl);cursor:pointer;transition:background .3s}
+#doc .math.cm.answered{background:var(--ok)}
+#doc .math.cm.hover,#doc .math.cm.flash{background:var(--hl2)}
+#doc .math.cm.answered.hover,#doc .math.cm.answered.flash{background:var(--ok2)}
+#doc .math:not([data-g]):not(.cm){cursor:pointer}
+button.pin{all:unset;cursor:pointer;font-size:.8em;padding:0 2px}
+button.pin::before{content:"💬"}
+.error{font:15px var(--ui);color:var(--warn);white-space:pre-wrap}
+/* folding sections: a toggle in the left margin of each heading */
+#doc .fold{all:unset;cursor:pointer;display:inline-block;width:18px;margin-left:-24px;margin-right:6px;
+  font:14px var(--ui);color:var(--muted);text-align:center;vertical-align:middle;opacity:.35;transition:opacity .15s}
+#doc .fold::before{content:"▾"}
+#doc .folded>.fold::before{content:"▸"}
+#doc :hover>.fold,#doc .folded>.fold,#doc .fold:focus-visible{opacity:1}
+#doc .folded-away{display:none}
+#doc .folded[data-n]::after{content:attr(data-n);font:12px var(--ui);color:var(--fg);background:var(--ok);
+  border-radius:0;padding:1px 8px;margin-left:10px;vertical-align:middle;white-space:nowrap}
+#doc .folded.has-open::after{background:var(--hl)}
+@media (max-width:860px){#doc .fold{margin-left:0}}
+
+/* delete a block: an x in the right margin, shown on hover */
+#doc>[data-pos]{position:relative}
+#doc .xblk,#doc .eblk{all:unset;position:absolute;right:-28px;top:.2em;width:20px;text-align:center;cursor:pointer;
+  font:16px/1 var(--ui);color:var(--muted);opacity:0;transition:opacity .15s}
+#doc .eblk{top:1.7em;font-size:14px}
+#doc .xblk::before{content:"×"}
+#doc .eblk::before{content:"✎"}
+#doc>[data-pos]:hover>:is(.xblk,.eblk),#doc :is(.xblk,.eblk):focus-visible{opacity:.6}
+#doc .xblk:hover{opacity:1;color:var(--del)}
+#doc .eblk:hover{opacity:1;color:var(--accent)}
+/* insert text between blocks: a line with a + shows when you hover the gap */
+#doc .ablk{all:unset;position:absolute;left:0;right:0;bottom:-.9em;height:.9em;z-index:1;cursor:pointer;opacity:0;transition:opacity .15s}
+#doc .ablk.above{bottom:auto;top:-.9em}
+#doc .ablk::before{content:"";position:absolute;left:0;right:0;top:50%;border-top:1px dashed var(--accent)}
+#doc .ablk::after{content:"+";position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);padding:0 8px;
+  font:14px/1 var(--ui);color:var(--accent);background:var(--bg)}
+#doc .ablk:hover,#doc .ablk:focus-visible{opacity:1}
+#doc .empty-add{font:12px var(--ui)}
+#doc .block-edit textarea{font:13px/1.5 ui-monospace,Menlo,monospace;min-height:0;resize:vertical}
+@media (max-width:860px){#doc .xblk,#doc .eblk{right:0}#doc .eblk{right:22px;top:.2em}}
+
+/* ----- contents (left) ----- */
+#toc{grid-column:1;font:12px/1.4 var(--ui);position:sticky;top:57px;align-self:flex-start;
+  max-height:calc(100vh - 73px);overflow:auto}
+#toc h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0;font-weight:600}
+#toc .head{display:flex;align-items:center;justify-content:space-between;margin:0 0 10px}
+#tocHide{font-size:12px;padding:0 7px;line-height:18px}
+#tocShow{display:none;position:fixed;left:10px;top:57px;z-index:4;font-size:14px;padding:3px 8px}
+body.notoc.hastoc #tocShow{display:block}
+#toc a{display:flex;gap:6px;align-items:baseline;color:var(--muted);text-decoration:none;padding:3px 6px;
+  border-left:2px solid transparent;border-radius:0 4px 4px 0}
+#toc a:hover{color:var(--fg);background:rgba(128,128,128,.08)}
+#toc a.active{color:var(--fg);border-left-color:var(--accent);background:rgba(128,128,128,.08)}
+#toc a.top{font-weight:600}
+#toc a.away{opacity:.6}
+#toc a .t{flex:1;min-width:0;overflow-wrap:anywhere}
+#toc a .t .math{font-size:.95em}
+#toc a .n{font-size:10px;padding:0 6px;border-radius:0;background:var(--hl);color:var(--fg);white-space:nowrap}
+#doc h1,#doc h2,#doc h3,#doc h4,#doc h5,#doc h6{scroll-margin-top:64px}
+@media (max-width:1180px){main{grid-template-columns:180px minmax(0,1fr) 300px}}
+
+/* ----- watermark: Codex Seraphinianus figures down the left and right columns (see wmInit in viewer.js) ----- */
+.wmfig{position:fixed;z-index:-1;pointer-events:none;background:var(--accent);opacity:.22;
+  -webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;-webkit-mask-size:contain;mask-size:contain;-webkit-mask-position:center;mask-position:center}
+.wmfig[hidden]{display:none}
+#wmvote{position:fixed;left:-99px;top:0;z-index:30;font:12px var(--ui);color:var(--fg);background:var(--panel);border:1px solid var(--border);
+  padding:2px 7px;pointer-events:none;opacity:0;transition:opacity .15s}
+body.wm-hover{cursor:pointer}
+body.wm-hover #wmvote,#wmvote.flash{opacity:1}
+/* ----- sidebar ----- */
+aside{grid-column:3;font:12px/1.5 var(--ui);position:sticky;top:57px;align-self:flex-start;
+  max-height:calc(100vh - 73px);overflow:auto}
+aside h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 10px;font-weight:600}
+aside .empty{color:var(--muted)}
+aside .head{display:flex;align-items:center;justify-content:space-between;margin:0 0 10px}
+aside .head h2{margin:0}
+aside h3{font-size:11px;color:var(--muted);font-weight:600;margin:12px 0 4px}
+aside .head button{font-size:12px;padding:2px 8px}
+aside .hbtns{display:flex;gap:6px}
+#askClaude.busy{background:var(--claude)}
+#askClaude:disabled{opacity:.5;cursor:default}
+/* threads: shared */
+.thread .top{display:flex;gap:6px;align-items:baseline;cursor:pointer;position:relative}
+.thread .noquote{flex:1;min-width:0;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.thread q{flex:1;min-width:0;color:var(--muted);font-style:italic;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tacts{display:none;gap:8px;position:absolute;top:-3px;right:0;z-index:1;padding:1px 6px;
+  background:var(--panel);border:1px solid var(--border);border-radius:0;box-shadow:0 2px 8px rgba(0,0,0,.15)}
+.thread:hover .tacts,.thread:focus-within .tacts{display:flex}
+@media (hover:none){.tacts{display:flex}}
+button.link{border:0;background:none;padding:0;color:var(--accent);font-size:12px}
+button.link:hover{text-decoration:underline}
+.pill{font-size:10px;padding:0 6px;border-radius:0;background:var(--hl);white-space:nowrap}
+.answered .pill{background:var(--ok)}
+.msg{margin-top:3px}
+.msg .who{font-weight:600;color:var(--muted);margin-right:5px}
+.msg.claude .who{color:var(--accent)}
+.msg .text{white-space:pre-wrap;overflow-wrap:anywhere}
+.msg code,.thread q code,.thread.sugg code{font:.92em ui-monospace,Menlo,monospace;background:var(--code);padding:0 .25em;border-radius:3px;font-style:normal}
+.msg a,.thread.sugg a{color:var(--accent)}
+.crow{font-size:12px;color:var(--muted);margin:-4px 0 10px}
+/* suggested changes */
+#doc del.sg,#doc .math.sg-del{color:var(--del);text-decoration:line-through;background:var(--delbg);cursor:pointer}
+#doc ins.sg,#doc .math.sg-ins{color:var(--ins);text-decoration:underline;text-decoration-color:var(--ins);background:var(--insbg);cursor:pointer}
+#doc .math.sg-del{opacity:.7}
+#doc .sg.hover,#doc .math[data-g].hover,#doc .sg.flash,#doc .math[data-g].flash{outline:2px solid var(--hl2);outline-offset:1px}
+h3.shead{display:flex;justify-content:space-between;align-items:baseline}
+h3.shead .tacts2{display:flex;gap:8px;font-weight:400}
+.thread.sugg .diff{margin-top:3px;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:6;-webkit-box-orient:vertical;overflow:hidden}
+.thread.sugg del{color:var(--del);background:var(--delbg)}
+.thread.sugg ins{color:var(--ins);background:var(--insbg);text-decoration:none}
+.msg .text mjx-container{white-space:nowrap}
+.msg .text mjx-container[display="true"]{margin:.4em 0!important;overflow-x:auto;overflow-y:hidden;max-width:100%}
+.msg{position:relative}
+.msg .macts{display:none;position:absolute;top:-4px;right:22px;z-index:1;gap:2px;padding:1px 3px;
+  background:var(--panel);border:1px solid var(--border);border-radius:0;box-shadow:0 2px 8px rgba(0,0,0,.15)}
+.msg:hover .macts{display:flex}
+@media (hover:none){.msg .macts{display:flex}}
+.msg .macts button{border:0;background:none;color:var(--muted);padding:0 3px;font-size:11px}
+.msg .macts button:hover{color:var(--fg);text-decoration:underline}
+.resall{display:flex;justify-content:flex-end;margin:0 0 6px}
+/* actions menu per message: Reply, Resolve */
+.msg .dots{all:unset;float:right;width:20px;margin-left:6px;text-align:center;cursor:pointer;color:var(--muted);
+  font:14px/1.4 var(--ui);opacity:0;transition:opacity .15s}
+.msg:hover .dots,.msg .dots.open,.msg .dots:focus-visible{opacity:1}
+@media (hover:none){.msg .dots{opacity:.7}}
+.menu{position:fixed;z-index:30;display:flex;flex-direction:column;min-width:110px;padding:3px 0;
+  background:var(--panel);border:1px solid var(--border);box-shadow:0 6px 20px rgba(0,0,0,.4)}
+.menu button{border:0;background:none;text-align:left;padding:4px 12px;border-radius:0}
+.menu button:hover,.menu button:focus-visible{background:var(--hl)}
+.menu button.danger{color:var(--del)}
+.menu hr{border:0;border-top:1px solid var(--border);margin:3px 0;width:100%}
+.thread .slot:empty{display:none}
+.thread.flash{outline:3px solid var(--hl2);outline-offset:1px}
+/* comments as compact boxes */
+.thread{background:var(--panel);border:1px solid var(--border);border-radius:0;padding:6px 9px;margin-bottom:6px}
+.thread.hover{border-color:var(--accent)}
+.msg.claude{background:var(--claude);border-radius:4px;padding:1px 6px;margin-left:-6px;margin-right:-6px}
+/* sidebar on/off */
+#undoBtn,#sideBtn,#foldBtn,#tocBtn{font-size:11px;padding:0 8px;line-height:18px}
+#sideBtn[aria-pressed=true],#tocBtn[aria-pressed=true]{background:var(--claude)}
+body.notoc #toc{display:none}
+body.noside aside{display:none}
+.acts{display:flex;justify-content:flex-end;gap:6px;margin-top:8px}
+textarea{width:100%;min-height:64px;font:inherit;padding:6px 8px;border:1px solid var(--border);border-radius:0;
+  background:var(--bg);color:var(--fg);resize:vertical}
+button{font:inherit;font-size:12px;padding:4px 10px;border:1px solid var(--border);background:var(--panel);color:var(--fg);
+  border-radius:0;cursor:pointer}
+button.primary{background:var(--accent);border-color:var(--accent);color:var(--bg)}
+.hint{font-size:12px;color:var(--muted);margin-right:auto;align-self:center}
+.askOnly{display:flex;gap:4px;align-items:center;align-self:center;cursor:pointer;white-space:nowrap;font-size:12px;color:var(--muted)}
+.msg .tag{font-size:10px;padding:0 5px;margin-right:5px;background:var(--hl);white-space:nowrap;vertical-align:1px}
+
+/* ----- floating comment button, dialog, toast ----- */
+#fab{position:fixed;z-index:6;font:13px var(--ui);padding:6px 10px;box-shadow:0 4px 16px rgba(0,0,0,.18)}
+dialog{border:1px solid var(--border);border-radius:0;background:var(--panel);color:var(--fg);
+  width:min(440px,92vw);font:14px var(--ui)}
+dialog::backdrop{background:rgba(0,0,0,.3)}
+dialog q{display:block;color:var(--muted);font-style:italic;margin-bottom:8px;max-height:4.5em;overflow:hidden}
+dialog textarea{min-height:100px}
+#reportDlg{width:min(680px,92vw)}
+#reportText{white-space:pre-wrap;overflow-wrap:anywhere;max-height:60vh;overflow:auto;margin:0;font:12px/1.5 ui-monospace,Menlo,monospace}
+#toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:50;display:none;gap:12px;align-items:center;
+  background:var(--fg);color:var(--bg);padding:8px 14px;border-radius:0;font:14px var(--ui);
+  box-shadow:0 6px 24px rgba(0,0,0,.25);max-width:calc(100vw - 32px)}
+#toast button{background:none;border:0;color:inherit;text-decoration:underline;padding:0}
+/* ----- chat (bottom right) ----- */
+#chat{position:fixed;right:16px;bottom:16px;z-index:40;font:12px/1.5 var(--ui)}
+#chatOpen{border:1px solid var(--accent);color:var(--accent);background:var(--bg);padding:6px 16px;box-shadow:0 4px 18px rgba(0,0,0,.35)}
+#chatOpen[hidden],#chatBox[hidden]{display:none}
+#chatBox{width:var(--kit-chat-w,min(300px,calc(100vw - 32px)));  /* as wide as the comments column, so it never covers the text */
+  height:var(--kit-chat-h,min(62vh,540px));display:flex;flex-direction:column;background:var(--panel);
+  border:1px solid var(--border);box-shadow:0 8px 32px rgba(0,0,0,.45);overflow:hidden}
+.chatHead{display:flex;gap:8px;align-items:center;padding:6px 10px;border-bottom:1px solid var(--border);color:var(--muted)}
+.chatHead b{color:var(--fg)}
+.chatHead .grow{flex:1}
+.chatHead button{padding:0 8px}
+.chatHead button:hover{border-color:var(--accent);color:var(--accent)}
+.chatHead button:disabled{opacity:.5;cursor:default}
+#chatMsgs{flex:1;overflow-y:auto;padding:8px 10px;display:flex;flex-direction:column;gap:8px}
+.cm{max-width:94%;overflow-wrap:anywhere;min-width:0}
+.cm.user{align-self:flex-end;background:var(--hl);padding:5px 9px;white-space:pre-wrap}
+.cm.assistant{align-self:flex-start}
+.cm .cq{color:var(--muted);font-style:italic;border-left:2px solid var(--accent);padding-left:6px;margin-bottom:4px;
+  display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.cm .md p{margin:.3em 0}
+.cm .md ul,.cm .md ol{margin:.3em 0;padding-left:1.4em}
+.cm .md h4{margin:.5em 0 .2em;font-size:1em}
+.cm .md pre{font-size:12px;overflow:auto;background:var(--code);padding:6px 8px;margin:.4em 0}
+.cm .md code{font:.92em ui-monospace,Menlo,monospace;background:var(--code);padding:0 .25em;border-radius:3px}
+.cm .md pre code{background:none;padding:0}
+.cm .md a{color:var(--accent)}
+.cm .md mjx-container{white-space:nowrap}
+.cm .md mjx-container[display="true"]{margin:.4em 0!important;overflow-x:auto;overflow-y:hidden;max-width:100%}
+.ctool{color:var(--muted);font-size:11px;padding:1px 0;overflow-wrap:anywhere}
+.cerr{color:var(--warn);margin-top:3px}
+.cfoot{color:var(--muted);font-size:10px;margin-top:2px}
+.cempty{color:var(--muted);padding:12px 4px;line-height:1.5}
+.chatCtx{display:flex;gap:6px;align-items:center;padding:3px 10px;min-height:22px;color:var(--muted)}
+.chatCtx .grow{flex:1}
+.chatCtx label{display:flex;gap:4px;align-items:center;cursor:pointer;white-space:nowrap}
+.chatCtx .chip{border:1px solid var(--border);padding:0 4px 0 8px;display:inline-flex;gap:4px;align-items:center;
+  max-width:170px;min-width:0}
+.chatCtx .chip span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chatCtx .chip button{border:0;background:none;color:var(--muted);padding:0 4px}
+#chatCtx{min-width:0;overflow:hidden}
+.chatIn{display:flex;gap:6px;padding:6px 10px 10px;border-top:1px solid var(--border)}
+.chatIn textarea{flex:1;min-height:0;resize:none;height:54px;background:var(--code);color:var(--fg);border:1px solid var(--border);padding:5px 8px;font:12px/1.45 var(--ui);outline:none}
+.chatIn textarea:focus{border-color:var(--accent)}
+.chatIn button{border-color:var(--accent);color:var(--accent);padding:0 12px}
+.chatIn button.stop{border-color:var(--warn);color:var(--warn)}
+body.chatopen aside{max-height:calc(100vh - 73px - var(--kit-chat-h,min(62vh,540px)) - 28px)}
+@media (max-width:860px){body.chatopen main{padding-bottom:calc(var(--kit-chat-h,min(62vh,540px)) + 40px)}}
+@media (max-width:860px){main{display:flex;flex-direction:column;align-items:stretch}aside{position:static;max-height:none;align-self:stretch}
+  #toc,#tocBtn,body.notoc.hastoc #tocShow{display:none}}
+</style>
+</head>
+<body>
+<header>
+  <a id="home" href="/" title="Browse this folder">📁</a>
+  <span class="name" id="name"></span>
+  <span class="grow"></span>
+  <span id="counts"></span>
+  <button id="tocBtn" type="button" hidden>Contents</button>
+  <button id="foldBtn" type="button" hidden>Fold all</button>
+  <button id="undoBtn" type="button" title="Undo the last change made here (comment, suggestion, deleted block)">Undo</button>
+  <button id="sideBtn" type="button">Comments</button>
+  <span><span id="live"></span><span id="liveText">Live</span></span>
+</header>
+<main>
+  <nav id="toc" hidden><div class="head"><h2>Contents</h2><button id="tocHide" type="button">«</button></div><div id="tocList"></div></nav>
+  <article id="doc"></article>
+  <aside>
+    <div class="head"><h2>Comments</h2><span class="hbtns"><button id="askClaude" type="button">Oracle</button><button id="addGeneral" type="button">+ comment</button></span></div>
+    <div id="claudeRow" class="crow" hidden>Claude remembers earlier rounds on this file. <button id="newSession" type="button" class="link">New session</button></div>
+    <div id="threads"></div>
+  </aside>
+</main>
+<button id="tocShow" type="button" aria-label="Show the contents">☰</button>
+<button id="fab" hidden>💬 Comment</button>
+<dialog id="dlg">
+  <form method="dialog">
+    <q id="dlgQuote"></q>
+    <textarea id="ta" placeholder="Write a comment…"></textarea>
+    <div class="acts"><span class="hint">⌘/Ctrl + Enter to save</span>
+      <label class="askOnly" title="Claude answers in a reply to this comment. It suggests no change and edits nothing."><input type="checkbox" id="cmtAsk">Ask only</label>
+      <button value="cancel">Cancel</button><button value="ok" class="primary">Save</button></div>
+  </form>
+</dialog>
+<dialog id="reportDlg">
+  <form method="dialog">
+    <pre id="reportText"></pre>
+    <div class="acts"><button value="ok" class="primary">Close</button></div>
+  </form>
+</dialog>
+<div id="chat">
+  <button id="chatOpen" type="button" title="Chat with Claude about this document (⌘/Ctrl+S)">Chat</button>
+  <section id="chatBox" hidden>
+    <div class="chatHead"><b>Chat</b><span class="grow"></span>
+      <button id="chatNew" type="button" title="Start a new conversation">New</button>
+      <button id="chatMin" type="button" title="Hide the chat">–</button></div>
+    <div id="chatMsgs"></div>
+    <div class="chatCtx"><span id="chatCtx"></span><span class="grow"></span>
+      <label title="Claude reads the document and answers. It does not change the file."><input type="checkbox" id="chatAsk">Ask only</label></div>
+    <div class="chatIn"><textarea id="chatText" placeholder="Ask about this document…" title="Enter sends. Shift+Enter makes a new line."></textarea>
+      <button id="chatSend" type="button">Send</button></div>
+  </section>
+</div>
+<div id="toast"><span id="toastText"></span><button id="toastBtn" hidden></button></div>
+
+<script src="/kit/kit.js"></script>
+<script src="/viewer.js"></script>
+</body>
+</html>

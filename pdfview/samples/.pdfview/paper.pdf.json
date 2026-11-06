@@ -1,0 +1,47 @@
+{
+ "threads": [
+  {
+   "id": 1,
+   "anchor": {
+    "page": 1,
+    "quote": "tight up to a constant"
+   },
+   "msgs": [
+    {
+     "author": "you",
+     "text": "Which constant? Give the value.",
+     "ts": 1793969152
+    }
+   ]
+  },
+  {
+   "id": 2,
+   "msgs": [
+    {
+     "author": "you",
+     "text": "A general comment: check the notation $S_n$ in all sections.",
+     "ts": 1793969153
+    }
+   ]
+  },
+  {
+   "id": 3,
+   "anchor": {
+    "page": 2,
+    "quote": "Markov's inequality"
+   },
+   "msgs": [
+    {
+     "author": "you",
+     "text": "Why Markov here?",
+     "ts": 1793969153
+    },
+    {
+     "author": "claude",
+     "text": "Markov's inequality bounds the tail by the moment generating function, $\\Pr(Y \\ge t) \\le e^{-\\lambda t}\\,\\mathbb{E} e^{\\lambda Y}$.",
+     "ts": 1793969153
+    }
+   ]
+  }
+ ]
+}

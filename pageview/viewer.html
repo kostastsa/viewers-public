@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>pageview</title>
+<link rel="icon" type="image/png" href="/kit/icons/page.png">
+<link rel="stylesheet" href="/kit/kit.css">
+<link rel="stylesheet" href="/kit/components.css">
+<style>
+/* Layout: an app header; then the contents rail, the page (a text column; wide blocks use the full width) and the
+   comments sidebar. Nothing loads from the internet: the fonts are the fonts of the system. */
+:root{
+  --bg:#f6f6f3; --surface:#ffffff; --sunken:#eeeeea; --fg:#1c1f25; --muted:#646a74; --line:#dcdbd4; --line2:#c9c8c0;
+  --accent:#2c56c9; --accent-soft:#e2e8fa; --good:#17845a; --good-soft:#dff2e8; --warn:#a85d14; --warn-soft:#f8eadb;
+  --danger:#b33a3a; --danger-soft:#f9e1e1; --tip:#6b4fb8; --tip-soft:#ece6fa;
+  --mark:rgba(250,205,70,.45); --mark-active:rgba(255,160,30,.55); --draft:rgba(110,150,255,.35);
+  --heat:#1f8f86; --cold:#c9653a; --hover:#eef1f8;
+  --c1:#2c56c9; --c2:#cf5f2f; --c3:#1f977a; --c4:#9a4fb5; --c5:#c79a12; --c6:#d1477a; --c7:#4b8fd1; --c8:#6b7a3a;
+  --shadow:0 1px 2px rgba(20,24,32,.06),0 4px 16px rgba(20,24,32,.06);
+  --serif:"Iowan Old Style","Charter","Palatino Linotype",Georgia,serif;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  /* the names that the kit styles use */
+  --border:var(--line); --panel:var(--surface); --ui:var(--sans);
+  --text-w:760px;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#111317; --surface:#181b21; --sunken:#0c0e11; --fg:#dde0e6; --muted:#8d939d; --line:#2b3038; --line2:#3a404a;
+  --accent:#8fa9f6; --accent-soft:#1e2640; --good:#5fd09d; --good-soft:#132a20; --warn:#e8a264; --warn-soft:#2d2115;
+  --danger:#f08a8a; --danger-soft:#301818; --tip:#b9a2f5; --tip-soft:#221b38;
+  --mark:rgba(220,180,60,.35); --mark-active:rgba(255,160,30,.5); --draft:rgba(110,150,255,.35);
+  --heat:#3cc2b5; --cold:#ef9467; --hover:#1f2430;
+  --c1:#8fa9f6; --c2:#ef9467; --c3:#5fd09d; --c4:#cf98e6; --c5:#e9c84f; --c6:#f28bb1; --c7:#7fc0f5; --c8:#b6c47a;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 20px rgba(0,0,0,.25); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#111317; --surface:#181b21; --sunken:#0c0e11; --fg:#dde0e6; --muted:#8d939d; --line:#2b3038; --line2:#3a404a;
+  --accent:#8fa9f6; --accent-soft:#1e2640; --good:#5fd09d; --good-soft:#132a20; --warn:#e8a264; --warn-soft:#2d2115;
+  --danger:#f08a8a; --danger-soft:#301818; --tip:#b9a2f5; --tip-soft:#221b38;
+  --mark:rgba(220,180,60,.35); --mark-active:rgba(255,160,30,.5); --draft:rgba(110,150,255,.35);
+  --heat:#3cc2b5; --cold:#ef9467; --hover:#1f2430;
+  --c1:#8fa9f6; --c2:#ef9467; --c3:#5fd09d; --c4:#cf98e6; --c5:#e9c84f; --c6:#f28bb1; --c7:#7fc0f5; --c8:#b6c47a;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 20px rgba(0,0,0,.25); color-scheme:dark}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 var(--sans);display:flex;flex-direction:column;overflow:hidden}
+button{font:inherit;color:inherit;background:none;border:1px solid var(--line);border-radius:6px;padding:2px 9px;cursor:pointer;white-space:nowrap}
+button:hover{border-color:var(--accent);color:var(--accent)}
+button:disabled{opacity:.45;cursor:default;border-color:var(--line);color:var(--fg)}
+button.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+button:focus-visible,input:focus-visible,summary:focus-visible,th:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+a{color:var(--accent)}
+code{font:.88em var(--mono);background:var(--sunken);padding:.1em .35em;border-radius:4px}
+::highlight(pv-mark){background-color:var(--mark)}
+::highlight(pv-active){background-color:var(--mark-active)}
+::highlight(pv-draft){background-color:var(--draft)}
+
+/* ----- header ----- */
+header.app{display:flex;gap:8px;align-items:center;padding:6px 12px;border-bottom:1px solid var(--line);background:var(--surface);
+  white-space:nowrap;min-height:42px;font-size:13px}
+header.app #home{color:var(--muted);text-decoration:none;font-weight:600}
+header.app #name{min-width:0;flex:0 1 auto}
+header.app #dirLink{color:var(--muted);text-decoration:none}
+header.app .grow{flex:1}
+header.app .grp{display:flex;gap:5px;align-items:center}
+#live{width:8px;height:8px;border-radius:50%;background:var(--good);display:inline-block;flex:none}
+#live.off{background:var(--warn)}
+
+/* ----- layout ----- */
+.shell{flex:1;display:grid;grid-template-columns:210px minmax(0,1fr) 330px;min-height:0}
+body.nonav .shell,body.notoc .shell,body.datadoc .shell{grid-template-columns:0 minmax(0,1fr) 330px}
+body.noside .shell{grid-template-columns:210px minmax(0,1fr) 0}
+body.noside.nonav .shell,body.noside.notoc .shell,body.noside.datadoc .shell{grid-template-columns:0 minmax(0,1fr) 0}
+body.noside.chatopen .shell{grid-template-columns:210px minmax(0,1fr) 330px}
+body.noside.chatopen.nonav .shell,body.noside.chatopen.notoc .shell,body.noside.chatopen.datadoc .shell{grid-template-columns:0 minmax(0,1fr) 330px}
+nav#nav{grid-column:1;overflow:auto;padding:22px 8px 22px 14px;font-size:13px;min-width:0}
+#main{grid-column:2;overflow:auto;position:relative;min-width:0;outline:none}
+aside{grid-column:3;border-left:1px solid var(--line);overflow:auto;padding:8px 10px 20px;background:var(--surface);min-width:0}
+body.nonav nav#nav,body.notoc nav#nav,body.datadoc nav#nav,body.noside aside{display:none}
+nav h4,aside h4{margin:4px 6px 8px;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);display:flex;align-items:center;gap:6px}
+#toc a{display:block;color:var(--muted);text-decoration:none;padding:3px 8px;border-radius:4px;border-left:2px solid transparent;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#toc a.h3{padding-left:20px;font-size:12.5px}
+#toc a:hover{color:var(--fg);background:var(--sunken)}
+#toc a.cur{color:var(--accent);border-left-color:var(--accent)}
+@media (max-width:900px){.shell{grid-template-columns:minmax(0,1fr)!important}nav#nav,aside{display:none!important}#main{grid-column:1}}
+
+/* ----- the page: a text column, and wide blocks that break out of it ----- */
+#doc{display:grid;grid-template-columns:[full-start] minmax(0,1fr) [text-start] minmax(0,var(--text-w)) [text-end] minmax(0,1fr) [full-end];
+  padding:28px max(16px,env(safe-area-inset-right,0px)) 140px max(16px,env(safe-area-inset-left,0px));row-gap:16px;min-width:0}
+body.widetext{--text-w:1000px}
+#doc>*{grid-column:text;min-width:0;margin-top:0;margin-bottom:0}
+#doc>.wide{grid-column:full}
+body.datadoc #doc{display:block;padding:0;height:100%}
+.err-page{padding:40px;color:var(--warn);font-size:14px;white-space:pre-wrap;grid-column:full!important}
+#doc h1,#doc h2,#doc h3,#doc h4{font-family:var(--serif);font-weight:600;line-height:1.2;text-wrap:balance}
+#doc h1{font-size:34px;letter-spacing:-.01em}
+#doc h2{font-size:24px;margin-top:22px;padding-top:4px;scroll-margin-top:16px}
+#doc h3{font-size:18px;margin-top:8px;scroll-margin-top:16px}
+#doc h4{font-size:15.5px}
+#doc p,#doc li{text-wrap:pretty}
+#doc ul,#doc ol{padding-left:1.4em}
+#doc li{margin:2px 0}
+#doc blockquote{margin:0;padding:2px 0 2px 14px;border-left:3px solid var(--line2);color:var(--muted)}
+#doc hr{border:0;border-top:1px solid var(--line);width:100%}
+#doc img{max-width:100%;height:auto;cursor:zoom-in;border-radius:6px}
+#doc img.broken{min-width:120px;min-height:60px;background:var(--sunken);border:1px dashed var(--line2)}
+#doc figure{margin:0}
+#doc figcaption{color:var(--muted);font-size:13px;padding-top:4px}
+#doc mjx-container[display="true"]{overflow-x:auto;overflow-y:hidden;max-width:100%;margin:.2em 0!important}
+#doc .footnotes{font-size:13px;color:var(--muted)}
+.pv-head{display:grid;gap:6px}
+.pv-head h1{margin:0}
+.pv-head .sub{margin:0;color:var(--muted);font-size:17px}
+.pv-head .meta{display:flex;flex-wrap:wrap;gap:6px 12px;color:var(--muted);font-size:13px;align-items:center}
+.pv-head .chip{border:1px solid var(--line);border-radius:10px;padding:0 8px;background:var(--surface)}
+
+/* ----- the source of a block ----- */
+.blk{position:relative}
+.srcbtn{position:absolute;top:-10px;right:0;z-index:3;font:500 11px/1 var(--sans);padding:4px 8px;border-radius:10px;background:var(--surface);
+  color:var(--muted);opacity:0;transition:opacity .15s}
+.blk:hover>.srcbtn,.srcbtn.on,.srcbtn:focus-visible,body.allsrc .srcbtn{opacity:1}
+@media (hover:none){.srcbtn{display:none}}
+.pv-src{margin:0 0 10px;background:var(--sunken);border:1px dashed var(--line2);border-radius:8px;padding:10px 12px;
+  font:12.5px/1.55 var(--mono);white-space:pre;overflow-x:auto;color:var(--fg)}
+.pv-src::before{content:attr(data-file);display:block;font:600 10.5px/1 var(--sans);text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:8px}
+
+/* ----- the components: /kit/components.css. Here only the rules of pageview. ----- */
+body.datadoc #doc>.table{height:100%}
+body.datadoc .pv-table,body.datadoc .pv-grid,.pv-full .isfull{height:100%;display:flex;flex-direction:column;border-radius:0;border:0;box-shadow:none}
+body.datadoc .twrap,.pv-full .isfull .twrap{flex:1;max-height:none!important}
+body.datadoc .tbar{padding:9px 16px}
+body.datadoc .tbar .ttl{font:600 17px/1.2 var(--serif)}
+body.pv-hasfull #chat{display:none}
+body.datadoc #srcAll,body.datadoc #navBtn{display:none}
+/* ----- comment button and the comment box on the page (above the full-window view of a table) ----- */
+#cbtn{position:fixed;z-index:56;display:none;background:var(--surface);border:1px solid var(--accent);color:var(--accent);
+  border-radius:14px;padding:3px 10px;box-shadow:0 3px 12px rgba(0,0,0,.25);font-size:13px}
+#pop{position:fixed;z-index:57;width:min(340px,calc(100vw - 16px));margin:0;padding:8px;background:var(--surface);
+  border:1px solid var(--accent);border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,.25)}
+#pop .where{color:var(--muted);font-size:11px;margin-bottom:4px}
+
+/* ----- the comments sidebar ----- */
+aside .empty{color:var(--muted);padding:6px;font-size:13px}
+.stools{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 10px}
+.stools .grow{flex:1}
+.stools button{font-size:12px;padding:2px 9px}
+.stools button[hidden]{display:none}
+.thread{border:1px solid var(--line);border-radius:8px;padding:7px 9px;margin:0 0 8px;background:var(--bg);cursor:pointer;font-size:13px}
+.thread.active{border-color:var(--accent)}
+.thread .top{display:flex;gap:6px;align-items:baseline;margin-bottom:4px}
+.thread .where{color:var(--muted);font-size:11px;white-space:nowrap}
+.thread q{color:var(--muted);font-style:italic;flex:1;min-width:0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.thread q::before,.thread q::after{content:none}
+.thread .gen{flex:1;color:var(--muted)}
+.pill{font-size:10px;border-radius:8px;padding:0 6px;border:1px solid var(--line);color:var(--muted);white-space:nowrap}
+.pill.open{border-color:var(--accent);color:var(--accent)}
+.pill.answered{border-color:var(--good);color:var(--good)}
+.pill.lost{border-color:var(--warn);color:var(--warn)}
+.msg{padding:3px 0;border-top:1px dashed var(--line);position:relative}
+.msg:first-of-type{border-top:0}
+.msg .who{font-size:11px;color:var(--muted);display:flex;gap:6px;align-items:center}
+.msg .who b{color:var(--fg);font-weight:600}
+.msg.claude .who b{color:var(--accent)}
+.msg .acts{margin-left:auto;display:none;gap:4px}
+.msg:hover .acts{display:flex}
+.msg .acts button,.thread .tacts button{font-size:11px;padding:0 6px}
+.md p{margin:.2em 0}
+.md pre{background:var(--sunken);padding:5px 7px;overflow:auto;font-size:12px;margin:.3em 0}
+.md code{font:.92em var(--mono)}
+.md ul,.md ol{margin:.3em 0;padding-left:1.4em}
+.md h4{margin:.5em 0 .2em;font-size:1em}
+.thread .tacts{display:flex;gap:4px;margin-top:5px}
+.composer{margin:4px 0 8px}
+.composer textarea{width:100%;min-height:64px;resize:vertical;background:var(--sunken);color:var(--fg);border:1px solid var(--line);
+  border-radius:6px;padding:5px 7px;font:13px/1.45 var(--sans);outline:none}
+.composer textarea:focus{border-color:var(--accent)}
+.composer .row{display:flex;gap:6px;justify-content:flex-end;margin-top:4px}
+.composer .row .hint{margin-right:auto;color:var(--muted);font-size:11px;align-self:center}
+.composer .row button{font-size:12.5px}
+
+/* ----- the Oracle ----- */
+#oracleBtn.busy{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+.crow{color:var(--muted);font-size:11px;margin:-4px 6px 8px}
+button.link{border:0;padding:0;color:var(--accent);text-decoration:underline;font-size:inherit}
+#reportDlg{background:var(--surface);color:var(--fg);border:1px solid var(--line);border-radius:8px;max-width:min(760px,90vw);padding:12px}
+#reportDlg::backdrop{background:rgba(0,0,0,.5)}
+#reportText{white-space:pre-wrap;max-height:60vh;overflow:auto;font:12px/1.45 var(--mono);margin:0 0 10px}
+#reportDlg .acts{display:flex;justify-content:flex-end}
+
+/* ----- toast ----- */
+#toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:70;display:flex;flex-direction:column;gap:6px;align-items:center}
+.toast{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:6px 12px;box-shadow:var(--shadow);
+  display:flex;gap:10px;align-items:center;max-width:min(560px,90vw);font-size:13px}
+.toast button{border:0;color:var(--accent);text-decoration:underline;padding:0}
+
+/* ----- chat (bottom right) ----- */
+#chat{position:fixed;right:16px;bottom:16px;z-index:40;font-size:12.5px}
+#chatOpen{border:1px solid var(--accent);color:var(--accent);background:var(--surface);border-radius:18px;padding:6px 16px;box-shadow:var(--shadow)}
+#chatOpen[hidden],#chatBox[hidden]{display:none}
+#chatBox{width:var(--kit-chat-w,min(310px,calc(100vw - 32px)));height:var(--kit-chat-h,min(62vh,540px));display:flex;flex-direction:column;
+  background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,.25);overflow:hidden}
+.chatHead{display:flex;gap:8px;align-items:center;padding:6px 10px;border-bottom:1px solid var(--line);color:var(--muted)}
+.chatHead b{color:var(--fg)}
+.chatHead .grow{flex:1}
+.chatHead button{padding:0 8px}
+#chatMsgs{flex:1;overflow-y:auto;padding:8px 10px;display:flex;flex-direction:column;gap:8px}
+.cm{max-width:94%;overflow-wrap:anywhere;min-width:0}
+.cm.user{align-self:flex-end;background:var(--accent-soft);border-radius:8px 8px 2px 8px;padding:5px 9px;white-space:pre-wrap}
+.cm.assistant{align-self:flex-start}
+.cm .cq{color:var(--muted);font-style:italic;border-left:2px solid var(--accent);padding-left:6px;margin-bottom:4px;
+  display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.cm .md{font:13px/1.5 var(--sans)}
+.ctool{color:var(--muted);font-size:11px;padding:1px 0;overflow-wrap:anywhere}
+.cerr{color:var(--warn);margin-top:3px}
+.cfoot{color:var(--muted);font-size:10px;margin-top:2px}
+.cempty{color:var(--muted);padding:12px 4px;line-height:1.5}
+.chatCtx{display:flex;gap:6px;align-items:center;padding:3px 10px;min-height:22px;color:var(--muted)}
+.chatCtx .grow{flex:1}
+.chatCtx label{display:flex;gap:4px;align-items:center;cursor:pointer;white-space:nowrap}
+.chatCtx .chip{border:1px solid var(--line);border-radius:10px;padding:0 4px 0 9px;display:inline-flex;gap:4px;align-items:center;max-width:180px;min-width:0}
+.chatCtx .chip span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chatCtx .chip button{border:0;color:var(--muted);padding:0 4px}
+#chatCtx{min-width:0;overflow:hidden}
+.chatIn{display:flex;gap:6px;padding:6px 10px 10px;border-top:1px solid var(--line)}
+.chatIn textarea{flex:1;resize:none;height:54px;background:var(--sunken);color:var(--fg);border:1px solid var(--line);border-radius:6px;
+  padding:5px 8px;font:12.5px/1.45 var(--sans);outline:none}
+.chatIn textarea:focus{border-color:var(--accent)}
+.chatIn button{border-color:var(--accent);color:var(--accent);padding:0 12px}
+.chatIn button.stop{border-color:var(--warn);color:var(--warn)}
+body.chatopen aside{padding-bottom:calc(var(--kit-chat-h,min(62vh,540px)) + 40px)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body class="noside">
+<header class="app">
+  <a href="/" id="home" title="Files">pageview</a>
+  <a id="dirLink" href="#" title="The folder of this file" hidden>📁</a>
+  <span id="name"></span>
+  <span id="live" title="Connected. The page updates when its files change."></span>
+  <span class="grow"></span>
+  <span class="grp">
+    <button id="navBtn" type="button" title="Contents (o)">☰</button>
+    <button id="srcAll" type="button" title="Show the Source button of every block">Source</button>
+    <button id="themeBtn" type="button" title="Light, dark, or as the system">◐ Auto</button>
+    <button id="undoBtn" type="button" title="Undo the last change to the comments" disabled>Undo</button>
+    <button id="sideBtn" type="button" title="Show or hide the comments (⌘/Ctrl+\)">Comments</button>
+  </span>
+</header>
+<div class="shell">
+  <nav id="nav" aria-label="Contents"><h4>Contents</h4><div id="toc"></div></nav>
+  <div id="main" tabindex="-1"><main id="doc"></main></div>
+  <aside id="side">
+    <h4><span id="counts">Comments</span></h4>
+    <div class="stools">
+      <button id="generalBtn" type="button" title="A comment about the whole page">+ Comment</button>
+      <button id="oracleBtn" type="button">Oracle</button>
+      <span class="grow"></span>
+      <button id="resolveAllBtn" type="button" title="Remove every comment (Undo brings them back)" hidden>Resolve all</button>
+    </div>
+    <div id="oracleRow" class="crow" hidden>Claude remembers earlier rounds on this page. <button id="newSession" type="button" class="link">New session</button></div>
+    <div id="threads"></div>
+  </aside>
+</div>
+<button id="cbtn" type="button" title="Comment on the selection (⌘/Ctrl+Shift+M)">💬 Comment</button>
+<div id="chat">
+  <button id="chatOpen" type="button" title="Chat with Claude about this page (⌘/Ctrl+S)">Chat</button>
+  <section id="chatBox" hidden>
+    <div class="chatHead"><b>Chat</b><span class="grow"></span>
+      <button id="chatNew" type="button" title="Start a new conversation">New</button>
+      <button id="chatMin" type="button" title="Hide the chat">–</button></div>
+    <div id="chatMsgs"></div>
+    <div class="chatCtx"><span id="chatCtx"></span><span class="grow"></span>
+      <label title="Claude reads the page and answers. It changes nothing."><input type="checkbox" id="chatAsk">Ask only</label></div>
+    <div class="chatIn"><textarea id="chatText" placeholder="Ask about this page…" title="Enter sends. Shift+Enter makes a new line."></textarea>
+      <button id="chatSend" type="button">Send</button></div>
+  </section>
+</div>
+<dialog id="reportDlg">
+  <form method="dialog"><pre id="reportText"></pre><div class="acts"><button value="ok">Close</button></div></form>
+</dialog>
+<div id="toast"></div>
+<script src="/kit/kit.js"></script>
+<script src="/kit/components.js"></script>
+<script src="/viewer.js"></script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+{
+  "title": "Top-1 accuracy (%) by model and dataset",
+  "rows": "model", "columns": "dataset", "value": "acc_mean", "sd": "acc_sd",
+  "row-groups": "family", "col-groups": "group", "row-info": "params_m: Params (M)",
+  "best": "col:max", "color": "heat", "summary": "mean rank", "footer": "mean best"
+}

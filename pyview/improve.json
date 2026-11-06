@@ -1,0 +1,11 @@
+{
+  "app": "pyview",
+  "port_env": "PYVIEW_PORT",
+  "tests": [
+    "python3 tests/test_ops.py",
+    "python3 tests/chat_test.py",
+    "uv run --with playwright python tests/chat_browser_test.py"
+  ],
+  "companions": [],
+  "samples": ["samples/cells.py"]
+}
