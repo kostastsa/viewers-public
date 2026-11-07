@@ -1,0 +1,3 @@
+#!/bin/sh
+# gh for the runs of the self-improving loop with the local tracker: improverun.py puts this folder first in PATH.
+exec python3 "$(cd "$(dirname "$0")/.." && pwd)/localgh.py" "$@"

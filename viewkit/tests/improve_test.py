@@ -7,6 +7,8 @@ is the stand-in of viewkit (tests/fake_claude.py): it asks one question first, t
 the app (committed) and in viewkit (not committed: the run commits it). The test runs no real Claude, makes no real
 issue, and never changes the real repositories. Needs Playwright and its Chromium. Run, in viewkit:
     uv run --with playwright python tests/improve_test.py pdfview      (or mdview, or pyview)
+With --mono, it tests the layout of the public repository viewers with the local tracker: one repository with the app
+and viewkit as folders (one worktree and one branch for a proposal), the notes in localgh.py, and no push.
 It deletes its folder in tests/tmp at the end. Set VIEWKIT_KEEP_TMP=1 to keep it."""
 import json
 import os
@@ -31,9 +33,11 @@ APPS = {
     "pyview": {"src": "tests/fixture.py", "doc": "notes.py", "ready": ".cell", "focus": "h1, header", "sample": "cells.py",
                "port": "8817"},
 }
-APP = sys.argv[1] if len(sys.argv) > 1 else "pdfview"
+ARGS = [a for a in sys.argv[1:] if not a.startswith("--")]
+MONO = "--mono" in sys.argv
+APP = ARGS[0] if ARGS else "pdfview"
 if APP not in APPS:
-    sys.exit(f"usage: improve_test.py {'|'.join(APPS)}")
+    sys.exit(f"usage: improve_test.py {'|'.join(APPS)} [--mono]")
 CFG = APPS[APP]
 REPO = KIT.parent / APP
 MAN = json.loads((REPO / "improve.json").read_text())
@@ -69,9 +73,30 @@ def copy_repo(src, name):
     return origin, live
 
 
-origin, live = copy_repo(REPO, APP)
-kit_origin, kit = copy_repo(KIT, "viewkit")
+def copy_mono():
+    """The repository viewers: origin (bare) and a live clone, with the app and viewkit as folders."""
+    origin, top = tmp / "viewers.git", tmp / "tools" / "viewers"
+    sh("git", "init", "-q", "--bare", "-b", "main", str(origin))
+    sh("git", "clone", "-q", str(origin), str(top))
+    for src, name in ((REPO, APP), (KIT, "viewkit")):
+        for f in sh("git", "ls-files", "--cached", "--others", "--exclude-standard", cwd=src).stdout.splitlines():
+            if (src / f).is_file():
+                (top / name / f).parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src / f, top / name / f)
+    sh("git", "-C", str(top), "add", "-A")
+    sh("git", "-C", str(top), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "base")
+    sh("git", "-C", str(top), "push", "-q", "-u", "origin", "main")
+    return origin, top
+
+
+if MONO:
+    origin, top = copy_mono()
+    kit_origin, live, kit = origin, top / APP, top / "viewkit"
+else:
+    origin, live = copy_repo(REPO, APP)
+    kit_origin, kit = copy_repo(KIT, "viewkit")
 tools = tmp / "tools"
+issues = tmp / "issues"
 paper = tmp / "docs" / CFG["doc"]
 paper.parent.mkdir()
 shutil.copy2(REPO / CFG["src"], paper)
@@ -93,6 +118,9 @@ env = dict(os.environ, PATH=f"{bindir}:{os.environ['PATH']}", **{MAN["port_env"]
            VIEWKIT_IMPROVE_WAIT="2", VIEWKIT_SANDBOX_BASE="9300", GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t",
            GIT_COMMITTER_EMAIL="t@t")
 env.pop("VIEWKIT_WT", None)
+if MONO:  # the local tracker: the stand-in gh must never be used
+    env.update(VIEWKIT_NOTES="local", VIEWKIT_ISSUES_DIR=str(issues), VIEWKIT_REPO="owner/viewers",
+               VIEWKIT_GH=str(tmp / "no-gh"), FAKE_IMPROVE_GH_FILE=str(tmp / "gh-title"))
 LIVE_PY = str(live / f"{APP}.py")
 
 
@@ -118,6 +146,36 @@ def gh_calls(*head):
     return [c for c in calls if c["argv"][:len(head)] == list(head)]
 
 
+def local_issues():
+    d = issues / "owner__viewers"
+    return {int(p.stem): json.loads(p.read_text()) for p in d.glob("*.json")} if d.is_dir() else {}
+
+
+def bodies_of_notes():
+    if MONO:
+        return {i["title"]: i["body"] for i in local_issues().values()}
+    return {c["stdin"].split("\n")[0]: c["stdin"] for c in gh_calls("issue", "create")}
+
+
+def commented(text, n=None):
+    if MONO:
+        return any(text in c["body"] for k, i in local_issues().items() if n in (None, k) for c in i["comments"])
+    return any(text in c["stdin"] for c in gh_calls("issue", "comment") if n is None or c["argv"][2] == str(n))
+
+
+def closed(n, reason=None):
+    if MONO:
+        i = local_issues().get(n, {})
+        return i.get("state") == "CLOSED" and (reason is None or i.get("stateReason") == reason.upper().replace(" ", "_"))
+    return any(c["argv"][2] == str(n) and (reason is None or reason in c["argv"]) for c in gh_calls("issue", "close"))
+
+
+def tree_of(n):
+    """The folder of the proposal of note n, and the folders of the app and of viewkit in it."""
+    w = tools / "wt" / f"note-{APP}-{n}"
+    return (w, w / "viewers" / APP, w / "viewers" / "viewkit") if MONO else (w, w / APP, w / "viewkit")
+
+
 def rev(d, ref):
     return sh("git", "-C", str(d), "rev-parse", "--verify", "--quiet", ref).stdout.strip()
 
@@ -140,8 +198,11 @@ def send_notes(pg, notes):
         pg.locator(".kitDashNew textarea").press("Enter")
     pg.wait_for_timeout(500)
     before = len(gh_log.read_text().splitlines()) if gh_log.exists() else 0
+    known = set(local_issues())
     pg.locator(".kitDashSend").click()
     pg.wait_for_function("() => document.querySelectorAll('.kitDashNote').length === 0", timeout=20000)
+    if MONO:
+        return sorted(set(local_issues()) - known)
     lines = [json.loads(x) for x in gh_log.read_text().splitlines()]
     return [i + 1 for i, c in enumerate(lines) if i >= before and c["argv"][:2] == ["issue", "create"]]
 
@@ -160,7 +221,10 @@ try:
 
         # --- 1. two notes, one for all the viewers and one only for the app; one Send all
         n, m = send_notes(pg, [("Make the chat text larger.", "all"), ("Hide the header.", "app")])
-        bodies = {c["stdin"].split("\n")[0]: c["stdin"] for c in gh_calls("issue", "create")}
+        bodies = bodies_of_notes()
+        if MONO:
+            check("the notes are issues of the local tracker, and gh is never called", len(bodies) == 2
+                  and not gh_log.exists(), bodies)
         check("each issue tells the scope of its note", "Scope: all the viewers" in bodies.get("Make the chat text larger.", "")
               and f"Scope: only {APP}" in bodies.get("Hide the header.", ""), bodies)
         check("the page tells that the notes go to Claude", "2 notes sent to Claude" in pg.inner_text("#toast"),
@@ -184,7 +248,7 @@ try:
         ask.locator("textarea").fill("2, blue")
         ask.locator("button", has_text="Answer").click()
         pg.wait_for_timeout(1000)
-        check("the answer goes to the issue", any("2, blue" in c["stdin"] for c in gh_calls("issue", "comment")))
+        check("the answer goes to the issue", commented("2, blue", n))
         st = wait_state(n, ("preview", "failed"))
         check("after the answer, the run makes a proposal and a preview", st.get("state") == "preview" and st.get("url"),
               (st, log_of(n)))
@@ -196,14 +260,24 @@ try:
               wait_state(m, ("preview", "failed")).get("state") == "preview"
               and len((tmp / "claude.jsonl").read_text().splitlines()) == calls, log_of(m))
 
-        wt = tools / "wt" / f"note-{APP}-{n}"
-        check("the proposal changes the app and viewkit, each on its branch",
-              "fake Claude" in (wt / APP / "README.md").read_text() and "kit implement" in (wt / "viewkit" / "README.md").read_text()
-              and rev(live, f"improve/note-{n}") and rev(kit, f"improve/{APP}-note-{n}"), log_of(n))
+        wt, wapp, wkit = tree_of(n)
+        if MONO:
+            check("the proposal changes the app and viewkit on one branch of one worktree",
+                  "fake Claude" in (wapp / "README.md").read_text() and "kit implement" in (wkit / "README.md").read_text()
+                  and rev(live, f"improve/note-{n}") and not rev(live, f"improve/{APP}-note-{n}"), log_of(n))
+            check("Claude's gh in the run is the local tracker", f"Make the chat text larger." in
+                  (tmp / "gh-title").read_text() if (tmp / "gh-title").exists() else False, log_of(n))
+        else:
+            check("the proposal changes the app and viewkit, each on its branch",
+                  "fake Claude" in (wapp / "README.md").read_text() and "kit implement" in (wkit / "README.md").read_text()
+                  and rev(live, f"improve/note-{n}") and rev(kit, f"improve/{APP}-note-{n}"), log_of(n))
         check("the run commits the kit part, and the status says that all the viewers change",
-              not sh("git", "-C", str(wt / "viewkit"), "status", "--porcelain").stdout and st.get("kit") is True)
+              not sh("git", "-C", str(wkit), "status", "--porcelain").stdout and st.get("kit") is True)
         check("the live checkouts do not change before Accept", rev(live, "HEAD") == live_head and rev(kit, "HEAD") == kit_head)
-        check("both branches are pushed", rev(origin, f"improve/note-{n}") and rev(kit_origin, f"improve/{APP}-note-{n}"))
+        if MONO:
+            check("with the local tracker, no branch is pushed", not rev(origin, f"improve/note-{n}"))
+        else:
+            check("both branches are pushed", rev(origin, f"improve/note-{n}") and rev(kit_origin, f"improve/{APP}-note-{n}"))
         check("the sandbox has a copy of the document that was open", (wt / f"sandbox-note-{n}" / CFG["doc"]).is_file())
         pg.wait_for_timeout(3500)
         check("the status shows the previews with Open", pg.locator(".kitDashRun.preview .kitDashOpen").count() == 2,
@@ -240,7 +314,7 @@ try:
             time.sleep(0.5)
         st2 = status(n)
         check("Change makes a second version of the proposal", st2.get("rev") == 2 and st2.get("state") == "preview"
-              and "kit change" in (wt / "viewkit" / "README.md").read_text(), (st2, log_of(n)))
+              and "kit change" in (wkit / "README.md").read_text(), (st2, log_of(n)))
         pv.wait_for_timeout(3000)
         pv.wait_for_selector(".kitPreview", timeout=20000)
         check("the preview reloads with the new version", "change" in pv.inner_text(".kitPreviewSum"),
@@ -252,14 +326,20 @@ try:
         check("Accept merges the proposal into main of the app and of viewkit", st3.get("state") == "shipped"
               and "A change by the fake Claude" in (live / "README.md").read_text()
               and "kit change" in (kit / "README.md").read_text(), (st3, log_of(n)))
-        check("Accept pushes both", rev(origin, "main") == rev(live, "main") and rev(kit_origin, "main") == rev(kit, "main"))
-        check("Accept closes the issue", any(c["argv"][2] == str(n) for c in gh_calls("issue", "close")))
+        if MONO:
+            check("with the local tracker, Accept does not push", rev(origin, "main") != rev(live, "main"))
+        else:
+            check("Accept pushes both", rev(origin, "main") == rev(live, "main") and rev(kit_origin, "main") == rev(kit, "main"))
+        check("Accept closes the issue", closed(n))
         pv.wait_for_timeout(3000)
         check("the preview tab goes back to the live document", f":{PORT}/view" in pv.url, pv.url)
         pv.wait_for_timeout(3000)
         check("the worktrees, the sandbox and the branches are removed", not wt.exists()
               and not rev(live, f"improve/note-{n}") and not rev(kit, f"improve/{APP}-note-{n}")
               and not rev(origin, f"improve/note-{n}") and not rev(kit_origin, f"improve/{APP}-note-{n}"), log_of(n))
+        if MONO:
+            check("git has no worktree of the accepted note",
+                  f"note-{APP}-{n}" not in sh("git", "-C", str(live), "worktree", "list").stdout)
 
         # --- 5. Reject: the second note; Reject closes it and removes the proposal
         head, khead = rev(live, "HEAD"), rev(kit, "HEAD")
@@ -272,8 +352,7 @@ try:
         pv2.locator(".kitPreviewForm textarea").press("Enter")
         st = wait_state(m, ("rejected", "failed"), 30)
         check("Reject closes the note with the reason", st.get("state") == "rejected"
-              and any("I need the header." in c["stdin"] for c in gh_calls("issue", "comment"))
-              and any(c["argv"][2] == str(m) and "not planned" in c["argv"] for c in gh_calls("issue", "close")), st)
+              and commented("I need the header.", m) and closed(m, "not planned"), st)
         pv2.wait_for_timeout(5000)
         check("Reject does not change the live checkouts", rev(live, "HEAD") == head and rev(kit, "HEAD") == khead)
         check("Reject removes the worktrees and the kit branch", not (tools / "wt" / f"note-{APP}-{m}").exists()
@@ -282,9 +361,9 @@ try:
         b.close()
 finally:
     for k in range(1, 40):
-        if (tools / "wt" / f"note-{APP}-{k}" / APP).exists():
-            sh(sys.executable, str(tools / "wt" / f"note-{APP}-{k}" / APP / f"{APP}.py"), "--stop",
-               env={**env, MAN["port_env"]: str(9300 + k)})
+        _, wapp_k, _ = tree_of(k)
+        if wapp_k.exists():
+            sh(sys.executable, str(wapp_k / f"{APP}.py"), "--stop", env={**env, MAN["port_env"]: str(9300 + k)})
     sh(sys.executable, LIVE_PY, "--stop", env=env)
     nums = [x for x in (globals().get("n"), globals().get("m")) if x]
     real = [b for k in nums for b in [f"improve/{APP}-note-{k}"] if rev(KIT, b)]
