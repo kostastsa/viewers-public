@@ -6,7 +6,8 @@ The file is found in the system prompt of the app: pyview says "the file PATH (a
 "the file PATH.".
 A run of the self-improving loop has the prompt '/improve MODE APP N': for implement and change it adds a line to
 README.md in its folder and commits it (with FAKE_IMPROVE_KIT=1 it also changes ../viewkit/README.md, not committed);
-for learn it does nothing. With FAKE_IMPROVE_QUESTION_FILE, the first implement asks a question and makes the file.
+for learn it does nothing. With FAKE_IMPROVE_GH_FILE, it writes the title from `gh issue view N` to that file. With
+FAKE_IMPROVE_QUESTION_FILE, the first implement asks a question and makes the file.
 An Oracle run has no system prompt and its prompt is '/SKILL "PATH"'. It waits one second, prints a report, and for a
 PDF it replies to each open thread with `pdfview reply`. If the path contains FAIL, it exits with an error."""
 import json
@@ -33,6 +34,10 @@ if prompt.startswith("/improve "):  # a run of the self-improving loop (improver
         sys.exit(0)
     if mode in ("implement", "change"):
         time.sleep(float(os.environ.get("FAKE_IMPROVE_SLEEP", "0.5")))
+        if os.environ.get("FAKE_IMPROVE_GH_FILE"):  # the `gh` of the run (the local tracker in the repository viewers)
+            r = subprocess.run(["gh", "issue", "view", n, "--json", "title", "-q", ".title"], capture_output=True, text=True)
+            with open(os.environ["FAKE_IMPROVE_GH_FILE"], "a") as f:
+                f.write(r.stdout.strip() + "\n")
         if os.environ.get("FAKE_IMPROVE_KIT") == "1" and os.path.isdir("../viewkit"):  # the kit part, not committed
             with open("../viewkit/README.md", "a") as f:
                 f.write(f"\nA kit {mode} by the fake Claude for note #{n}.\n")

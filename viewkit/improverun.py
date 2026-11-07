@@ -11,6 +11,11 @@
 A proposal has two worktrees in ~/tools/wt/note-APP-N: APP (branch improve/note-N) and viewkit (branch
 improve/APP-note-N). Claude may edit both. When viewkit changes, the run also tests the other apps (viewkit/improve.json,
 "apps") in worktrees next to the viewkit worktree, so they use the kit of the proposal. Accept merges viewkit first.
+In the repository viewers (all the apps and viewkit in one repository, improvekit.mono_root), a proposal has one
+worktree of the whole repository (W/viewers, branch improve/note-N), and Accept merges one branch.
+
+The notes are GitHub issues or issues of the local tracker (improvekit.tracker). With the local tracker, the run does
+not push, and Claude gets viewkit/bin/gh (the local tracker) first in PATH.
 
 One run at a time for each app (a lock file). The run writes its status for the pages (improvekit.write_status). The
 run does not depend on the server: a restart of the server does not stop it. Its log is STATUS_DIR/APP-N.log.
@@ -36,6 +41,10 @@ import claudekit  # noqa: E402
 import improvekit as ik  # noqa: E402
 
 
+TRACKER = "github"  # the tracker of the note of this run: "github" or "local" (main sets it)
+REPO = None  # the repository of the notes (main sets it)
+
+
 class Fail(Exception):
     """A step failed. The message is for the user."""
 
@@ -52,8 +61,9 @@ def git(cwd, *a, check=True, timeout=300):
 
 
 def gh(*a, stdin=None):
+    """A command of the tracker of this run (gh, or the local tracker)."""
     try:
-        r = subprocess.run([ik.GH, *a], capture_output=True, text=True, input=stdin, timeout=60)
+        r = subprocess.run(ik.gh_cmd(TRACKER) + list(a), capture_output=True, text=True, input=stdin, timeout=60)
         if r.returncode != 0:
             log("gh failed:", " ".join(a[:3]), (r.stderr or r.stdout).strip()[-200:])
         return r
@@ -112,7 +122,11 @@ def run_claude(m, prompt, cwd, tools, disallowed=(), add_dirs=()):
                 if b.get("type") == "tool_use":
                     log("claude:", b.get("name"), claudekit.tool_summary(b))
     log("claude -p", prompt)
-    err, stderr, rc = claudekit.run_stream(cmd, cwd, claudekit.clean_env(), on_event)
+    env = claudekit.clean_env()
+    if TRACKER == "local":  # `gh` is the local tracker for Claude
+        env["PATH"] = f"{KIT / 'bin'}{os.pathsep}{env.get('PATH', '')}"
+        env["VIEWKIT_NOTES_REPO"] = REPO or ""
+    err, stderr, rc = claudekit.run_stream(cmd, cwd, env, on_event)
     if err:
         raise Fail(err)
     if rc != 0 and not out["text"]:
@@ -161,12 +175,20 @@ def run_cmds(cmds, cwd, m=None):
     return True, ""
 
 
-def run_tests(app, m, w, wt, kit_changed):
+def run_tests(app, m, w, wt, kit_changed, live=None):
     """The tests of the app, and for a change of the kit also the tests of the other apps, each in a worktree of its
-    main next to the kit worktree (so it uses the kit of the proposal)."""
+    main next to the kit worktree (so it uses the kit of the proposal). In the repository viewers, the other apps are
+    folders of the same worktree."""
     ok, out = run_cmds(m.get("tests", []), wt, m)
     if not ok or not kit_changed:
         return ok, out
+    if live and ik.mono_root(live):
+        for name, cmds in other_apps().items():
+            if name != app and (wt.parent / name).is_dir():
+                ok, out = run_cmds(cmds, wt.parent / name)
+                if not ok:
+                    return ok, out
+        return True, ""
     for name, cmds in other_apps().items():
         repo = KIT.parent / name
         if name == app or not (repo / ".git").exists():
@@ -224,8 +246,13 @@ def add_worktree(repo, path, branch=None):
 
 def make_worktree(app, live, n):
     w, wt = ik.worktree_of(app, live, n)
-    kwt = w / "viewkit"
+    kwt = ik.kit_worktree_of(app, live, n)
     w.mkdir(parents=True, exist_ok=True)
+    mono = ik.mono_root(live)
+    if mono:  # one worktree of the whole repository: the app and viewkit are folders of it
+        if not wt.parent.exists():
+            add_worktree(mono, wt.parent, f"improve/note-{n}")
+        return w, wt, kwt
     if not wt.exists():
         add_worktree(live, wt, f"improve/note-{n}")
     if kwt.is_symlink():  # a proposal of version 1 had a link to the live kit
@@ -239,6 +266,16 @@ def commits(repo_dir, rng):
     return int(git(repo_dir, "rev-list", "--count", rng) or 0)
 
 
+def kit_changed_in(live, kwt):
+    """True when the proposal changes viewkit: commits on the kit branch, or in the repository viewers a change in the
+    folder viewkit."""
+    if not kwt.exists() or kwt.is_symlink():
+        return False
+    if ik.mono_root(live):
+        return bool(git(kwt, "diff", "--name-only", "main...HEAD", "--", "."))
+    return commits(kwt, "main..HEAD") > 0
+
+
 def commit_left(d, msg):
     if git(d, "status", "--porcelain"):
         git(d, "add", "-A")
@@ -249,12 +286,13 @@ def after_claude(app, live, n, m, w, wt, kwt, bases, text, change):
     """The steps after Claude: commit what is left, test, push, comment, preview. For a change, a failure keeps the
     proposal as it was before."""
     st = ik.read_status(app, n) or {}
-    repo = ik.repo_of(live)
+    repo = ik.notes_repo(live)
     line = (text.strip().splitlines() or [f"Changes for note #{n}"])[0][:72]
     commit_left(wt, f"{line}\n\nNote: #{n}")
     commit_left(kwt, f"{line}\n\nThe kit part of {app}#{n}.")
     new = commits(wt, f"{bases[0]}..HEAD") + commits(kwt, f"{bases[1]}..HEAD")
-    kit_changed = commits(kwt, "main..HEAD") > 0
+    kit_changed = kit_changed_in(live, kwt)
+    mono = ik.mono_root(live)
     back = (lambda msg, err: ik.write_status(app, n, state="preview", message=msg, error=err)) if change else None
 
     def undo():
@@ -271,7 +309,7 @@ def after_claude(app, live, n, m, w, wt, kwt, bases, text, change):
         return ik.write_status(app, n, state="failed", message="Claude made no change.", error=text[:1500])
     ik.write_status(app, n, state="testing", kit=kit_changed, summary=text[:2000],
                     message="The tests run" + (" (all the viewers: the change is in viewkit)." if kit_changed else "."))
-    ok, out = run_tests(app, m, w, wt, kit_changed)
+    ok, out = run_tests(app, m, w, wt, kit_changed, live)
     if not ok:
         if change:
             undo()
@@ -281,14 +319,16 @@ def after_claude(app, live, n, m, w, wt, kwt, bases, text, change):
         gh("issue", "edit", str(n), "-R", repo, "--add-label", "question")
         return ik.write_status(app, n, state="failed", message="The tests failed.", error=out)
     branch = f"improve/note-{n}"
-    pushed = git(wt, "push", "-q", "--force-with-lease", "-u", "origin", branch, check=False).returncode == 0
-    if kit_changed:
-        pushed = git(kwt, "push", "-q", "--force-with-lease", "-u", "origin", kit_branch(app, n),
-                     check=False).returncode == 0 and pushed
+    pushed = True
+    if TRACKER == "github":  # with the local tracker, the branches stay on this computer
+        pushed = git(wt, "push", "-q", "--force-with-lease", "-u", "origin", branch, check=False).returncode == 0
+        if kit_changed and not mono:
+            pushed = git(kwt, "push", "-q", "--force-with-lease", "-u", "origin", kit_branch(app, n),
+                         check=False).returncode == 0 and pushed
     head = git(wt, "rev-parse", "--short", "HEAD")
-    khead = git(kwt, "rev-parse", "--short", "HEAD") if kit_changed else None
-    where = f"`{branch}` (commit `{head}`)" + (f" and viewkit `{kit_branch(app, n)}` (commit `{khead}`, all the "
-                                                f"viewers)" if kit_changed else "")
+    khead = git(kwt, "rev-parse", "--short", "HEAD") if kit_changed and not mono else None
+    where = f"`{branch}` (commit `{head}`" + (", with viewkit: all the viewers)" if kit_changed and mono else ")") + (
+        f" and viewkit `{kit_branch(app, n)}` (commit `{khead}`, all the viewers)" if khead else "")
     comment(repo, n, (f"**Proposal changed**, from the feedback in the preview: {where}.\n\n" if change else
                       f"**Automatic proposal** on {where}.\n\n")
             + text[:2000] + "\n\nThe tests passed" + (" in all the viewers" if kit_changed else "")
@@ -345,7 +385,7 @@ def retest(app, live, n):
 def change(app, live, n, feedback):
     m = ik.manifest(live)
     with app_lock(app):
-        repo = ik.repo_of(live)
+        repo = ik.notes_repo(live)
         comment(repo, n, "**Feedback from the preview:**\n\n" + feedback)
         ik.write_status(app, n, state="changing", message="Claude changes the proposal.",
                         feedback=int((ik.read_status(app, n) or {}).get("feedback") or 0) + 1)
@@ -364,6 +404,17 @@ def cleanup(app, live, n):
         ik.stop_sandbox(app, live, n)
     except Exception as e:  # noqa: BLE001 - the cleanup goes on
         log("stop sandbox:", e)
+    mono = ik.mono_root(live)
+    if mono:  # one worktree of the whole repository, one branch
+        branch = f"improve/note-{n}"
+        git(mono, "worktree", "remove", "--force", str(wt.parent), check=False)
+        git(mono, "worktree", "prune", check=False)
+        if git(mono, "rev-parse", "--verify", "--quiet", branch, check=False).returncode == 0:
+            git(mono, "branch", "-D", branch, check=False)
+            if TRACKER == "github":
+                git(mono, "push", "-q", "origin", "--delete", branch, check=False)
+        shutil.rmtree(w, ignore_errors=True)
+        return
     for name in other_apps():
         if name != app and (w / name).exists():
             git(KIT.parent / name, "worktree", "remove", "--force", str(w / name), check=False)
@@ -374,7 +425,8 @@ def cleanup(app, live, n):
         git(repo, "worktree", "prune", check=False)
         if git(repo, "rev-parse", "--verify", "--quiet", branch, check=False).returncode == 0:
             git(repo, "branch", "-D", branch, check=False)
-            git(repo, "push", "-q", "origin", "--delete", branch, check=False)
+            if TRACKER == "github":
+                git(repo, "push", "-q", "origin", "--delete", branch, check=False)
     shutil.rmtree(w, ignore_errors=True)
 
 
@@ -388,17 +440,18 @@ def ready_to_merge(repo, name):
 def accept(app, live, n):
     m = ik.manifest(live)
     with app_lock(app):
-        repo = ik.repo_of(live)
+        repo = ik.notes_repo(live)
         w, wt = ik.worktree_of(app, live, n)
-        kwt = w / "viewkit"
+        kwt = ik.kit_worktree_of(app, live, n)
         branch, kb = f"improve/note-{n}", kit_branch(app, n)
-        kit_changed = kwt.exists() and not kwt.is_symlink() and commits(kwt, "main..HEAD") > 0
+        kit_changed = kit_changed_in(live, kwt)
+        kit_repo = kit_changed and not ik.mono_root(live)  # viewkit is a repository of its own, with its own branch
         try:
             ready_to_merge(live, app)
-            if kit_changed:
+            if kit_repo:
                 ready_to_merge(KIT, "viewkit")
             moved = False
-            for repo_dir, d, b in ((live, wt, branch),) + (((KIT, kwt, kb),) if kit_changed else ()):
+            for repo_dir, d, b in ((live, wt, branch),) + (((KIT, kwt, kb),) if kit_repo else ()):
                 if git(repo_dir, "merge-base", "--is-ancestor", "main", b, check=False).returncode != 0:
                     ik.write_status(app, n, message="main changed: the run rebases the proposal.")
                     if git(d, "rebase", "main", check=False).returncode != 0:
@@ -407,27 +460,30 @@ def accept(app, live, n):
                     moved = True
             if moved:
                 ik.write_status(app, n, state="accepting", message="The tests run again, after the rebase.")
-                ok, out = run_tests(app, m, w, wt, kit_changed)
+                ok, out = run_tests(app, m, w, wt, kit_changed, live)
                 if not ok:
                     raise Fail("After the rebase on main, the tests fail:\n" + out[-800:])
-            if kit_changed:  # the kit first: the app can need the new kit
+            if kit_repo:  # the kit first: the app can need the new kit
                 git(KIT, "merge", "-q", "--ff-only", kb)
             git(live, "merge", "-q", "--ff-only", branch)
         except Fail as e:
             ik.write_status(app, n, state="preview", message="Not merged.", error=str(e))
             return
         commit = git(live, "rev-parse", "--short", "HEAD")
-        kcommit = git(KIT, "rev-parse", "--short", "HEAD") if kit_changed else None
-        pushed = git(live, "push", "-q", "origin", "main", check=False).returncode == 0
-        if kit_changed:
-            pushed = git(KIT, "push", "-q", "origin", "main", check=False).returncode == 0 and pushed
-        what = f"`{commit}`" + (f" and viewkit `{kcommit}` (all the viewers)" if kit_changed else "")
+        kcommit = git(KIT, "rev-parse", "--short", "HEAD") if kit_repo else None
+        pushed = True
+        if TRACKER == "github":  # with the local tracker, main stays on this computer
+            pushed = git(live, "push", "-q", "origin", "main", check=False).returncode == 0
+            if kit_repo:
+                pushed = git(KIT, "push", "-q", "origin", "main", check=False).returncode == 0 and pushed
+        what = f"`{commit}`" + (f" and viewkit `{kcommit}` (all the viewers)" if kcommit else
+                                " (all the viewers)" if kit_changed else "")
         comment(repo, n, f"Shipped in {what} (accepted in the preview)."
                 + ("" if pushed else " A push to GitHub failed: run `git push` in the folder."))
         gh("issue", "close", str(n), "-R", repo, "--reason", "completed")
         gh("issue", "edit", str(n), "-R", repo, "--remove-label", "proposed")
         st = ik.write_status(app, n, state="shipped", commit=commit, error=None,
-                             message=f"Shipped in {commit}" + (f" and viewkit {kcommit}." if kit_changed else ".")
+                             message=f"Shipped in {commit}" + (f" and viewkit {kcommit}." if kcommit else ".")
                              + ("" if pushed else " A push failed."))
     time.sleep(float(os.environ.get("VIEWKIT_IMPROVE_WAIT", "4")))  # the preview page sees "shipped" and goes back
     cleanup(app, live, n)
@@ -437,7 +493,7 @@ def accept(app, live, n):
 
 def reject(app, live, n, reason=""):
     with app_lock(app):
-        repo = ik.repo_of(live)
+        repo = ik.notes_repo(live)
         comment(repo, n, "**Rejected in the preview.**" + (f"\n\nReason: {reason}" if reason else ""))
         gh("issue", "close", str(n), "-R", repo, "--reason", "not planned")
         gh("issue", "edit", str(n), "-R", repo, "--remove-label", "proposed", "--add-label", "rejected")
@@ -454,7 +510,7 @@ def learn(app, live, n, decision):
     files = [KIT / "PRINCIPLES.md", Path(live) / "PRINCIPLES.md"]
     tools = ["Read", "Grep", "Glob", "Bash(gh issue view:*)"] + [f"{t}(/{f})" for f in files for t in ("Edit", "Write")]
     try:
-        run_claude(m, f"/improve learn {app} {n} {ik.repo_of(live)} {decision}", KIT, tools, ["Bash(git:*)", "WebFetch"],
+        run_claude(m, f"/improve learn {app} {n} {ik.notes_repo(live)} {decision}", KIT, tools, ["Bash(git:*)", "WebFetch"],
                    [live])
     except Fail as e:
         log("learn:", e)
@@ -469,14 +525,19 @@ def learn(app, live, n, decision):
         git(repo_dir, "add", "--", f.name)
         git(repo_dir, "commit", "-q", "-m", f"PRINCIPLES: from {app}#{n} ({decision})\n\nCo-Authored-By: Claude "
             f"<noreply@anthropic.com>", "--", f.name, check=False)
-        git(repo_dir, "push", "-q", "origin", "main", check=False)
+        if TRACKER == "github":
+            git(repo_dir, "push", "-q", "origin", "main", check=False)
         log("learn: committed", f)
 
 
 def main(argv):
     action, app, live, n = argv[0], argv[1], Path(argv[2]), int(argv[3])
     rest = argv[4] if len(argv) > 4 else ""
-    log("start", action, app, n)
+    global TRACKER, REPO
+    REPO = ik.notes_repo(live)
+    st = ik.read_status(app, n) or {}
+    TRACKER = st.get("tracker") or ik.tracker_of_url(st.get("issue")) or "github"
+    log("start", action, app, n, "tracker:", TRACKER)
     try:
         if action == "implement":
             implement(app, live, n)

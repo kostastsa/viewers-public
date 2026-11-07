@@ -1,9 +1,13 @@
-"""Notes for self-improving apps (docs/self-improving-apps.md): a note is a GitHub issue with the label `note`.
+"""Notes for self-improving apps (docs/self-improving-apps.md): a note is an issue with the label `note`.
 
 A note is about the app, not about a document. It never holds the text or the path of a document, unless the user writes
-it. The app gives its name, its folder (a git checkout) and the context. The kit adds the commit, makes the issue with
-`gh`, and keeps the note in a local queue when `gh` fails (no network, no login). The next note sends the queue first.
-`note_main` is the `APP note` subcommand.
+it. The app gives its name, its folder (a git checkout) and the context. The kit adds the commit and makes the issue in
+the tracker of the repository (`tracker`): a GitHub issue with `gh` when the gh user may push to the repository, else an
+issue of the local tracker (localgh.py, JSON files on this computer). When `gh` fails (no network), the note waits in a
+local queue, and the next note sends the queue first. `note_main` is the `APP note` subcommand.
+
+The layout (`mono_root`): each app is a repository of its own next to viewkit, or all the apps and viewkit are folders
+of one repository (the public repository viewers). The worktrees of a proposal follow the layout (`worktree_of`).
 
 The automatic loop (version 2): a note from the note box starts a background run (improverun.py) that makes a proposal,
 tests it, and opens a preview tab: the sandbox server of the proposal, with copies of the document. The preview tab has
@@ -29,6 +33,7 @@ SOURCES = ("user", "agent", "cli")
 TEXT_MAX = 4000
 # The tests set VIEWKIT_GH (a stand-in for gh, tests/fake_gh.py) and VIEWKIT_NOTES_QUEUE.
 GH = os.environ.get("VIEWKIT_GH") or "gh"
+LOCALGH = Path(__file__).resolve().parent / "localgh.py"
 QUEUE = Path(os.environ.get("VIEWKIT_NOTES_QUEUE") or Path.home() / ".cache" / "viewkit" / "notes-queue.jsonl")
 _lock = threading.Lock()
 _labels_done = set()  # the repositories that have the labels, in this process
@@ -52,6 +57,73 @@ def repo_of(app_dir):
             name = url[len(head):]
             return name[:-4] if name.endswith(".git") else name
     return None
+
+
+def toplevel(app_dir):
+    """The top folder of the git checkout of app_dir, or None."""
+    try:
+        out = _run(["git", "rev-parse", "--show-toplevel"], cwd=app_dir, timeout=5).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return Path(out).resolve() if out else None
+
+
+def mono_root(app_dir):
+    """The top folder of the repository when the app is a folder of a larger repository (the repository viewers, with
+    all the apps and viewkit), else None (the app is a repository of its own)."""
+    top = toplevel(app_dir)
+    return top if top and top != Path(app_dir).resolve() else None
+
+
+def notes_repo(app_dir):
+    """The name of the repository of the notes: OWNER/NAME of the GitHub repository of origin, or local/FOLDER (the top
+    folder of the checkout) when the checkout is not on GitHub."""
+    repo = repo_of(app_dir)
+    if repo:
+        return repo
+    top = toplevel(app_dir) or Path(app_dir).resolve()
+    return f"local/{top.name}"
+
+
+_trackers = {}  # repository -> "github" or "local", in this process
+
+
+def tracker(repo):
+    """Where the notes of the repository go: "github" when the gh user may push to it (the owner, or a fork), else
+    "local" (the local tracker): no push access, no gh, or no gh login. VIEWKIT_NOTES=github|local sets it. Raises
+    RuntimeError when gh cannot answer (no network): then the note waits in the queue."""
+    env = os.environ.get("VIEWKIT_NOTES")
+    if env in ("github", "local"):
+        return env
+    if repo.startswith("local/"):
+        return "local"
+    if repo not in _trackers:
+        try:
+            r = _run([GH, "api", f"repos/{repo}", "--jq", ".permissions.push"])
+        except FileNotFoundError:
+            _trackers[repo] = "local"  # no gh
+        except subprocess.SubprocessError as e:
+            raise RuntimeError(f"gh did not answer: {e}")
+        else:
+            err = (r.stderr + r.stdout).lower()
+            if r.returncode == 0:
+                _trackers[repo] = "github" if r.stdout.strip() == "true" else "local"
+            elif "auth login" in err or "not logged" in err or "not found" in err or "404" in err:
+                _trackers[repo] = "local"  # no login, or the repository is not visible to this user
+            else:
+                raise RuntimeError((r.stderr or r.stdout).strip() or "gh failed.")
+    return _trackers[repo]
+
+
+def tracker_of_url(url):
+    """The tracker of an issue from its URL: "local" for local://..., "github" for https://..., else None."""
+    url = str(url or "")
+    return "local" if url.startswith("local://") else "github" if url.startswith("http") else None
+
+
+def gh_cmd(mode):
+    """The command for the tracker: gh, or the local tracker."""
+    return [GH] if mode == "github" else [sys.executable, str(LOCALGH)]
 
 
 def commit_of(app_dir):
@@ -78,7 +150,7 @@ def make(app, app_dir, text, source="user", context=None, scope=None):
     if source not in SOURCES:
         raise ValueError(f"The source must be one of {', '.join(SOURCES)}.")
     ctx = {**commit_of(app_dir), **(context or {})}
-    return {"app": app, "repo": repo_of(app_dir), "text": text, "source": source, "context": ctx,
+    return {"app": app, "repo": notes_repo(app_dir), "text": text, "source": source, "context": ctx,
             "scope": scope if scope in SCOPES else None,
             "time": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
 
@@ -98,7 +170,7 @@ def body_of(note):
 
 
 def _ensure_labels(repo):
-    if repo in _labels_done:
+    if repo in _labels_done or tracker(repo) == "local":
         return
     ok = True
     for name, color, desc in LABELS:
@@ -108,31 +180,16 @@ def _ensure_labels(repo):
         _labels_done.add(repo)
 
 
-_push = {}  # repository -> True if the gh user may push to it, in this process
-
-
-def _check_push(repo):
-    """A note goes only to a repository that the gh user may push to (the owner's repository, or a fork). A clone of
-    the public repository of someone else keeps its notes in the local queue, so it never makes issues by itself."""
-    if repo not in _push:
-        r = _run([GH, "api", f"repos/{repo}", "--jq", ".permissions.push"])
-        if r.returncode != 0:  # no network or no login: ask again next time
-            raise RuntimeError((r.stderr or r.stdout).strip() or "gh failed.")
-        _push[repo] = r.stdout.strip() == "true"
-    if not _push[repo]:
-        raise RuntimeError(f"you cannot push to {repo}, so the note stays on this computer "
-                           f"(fork the repository to send notes to your fork)")
-
-
 def _send(note):
-    """Make the issue. Returns its URL. Raises RuntimeError if gh fails."""
-    if not note.get("repo"):
-        raise RuntimeError("The app is not a GitHub checkout (no origin on github.com).")
+    """Make the issue in the tracker of the repository. Returns its URL. Raises RuntimeError if gh fails."""
+    repo = note.get("repo")
+    if not repo:
+        raise RuntimeError("The note has no repository.")
     try:
-        _check_push(note["repo"])
-        _ensure_labels(note["repo"])
-        out = _run([GH, "issue", "create", "-R", note["repo"], "--title", title_of(note["text"]),
-                    "--label", LABEL, "--body-file", "-"], stdin=body_of(note))
+        mode = tracker(repo)
+        _ensure_labels(repo)
+        out = _run(gh_cmd(mode) + ["issue", "create", "-R", repo, "--title", title_of(note["text"]),
+                                   "--label", LABEL, "--body-file", "-"], stdin=body_of(note))
     except FileNotFoundError:
         raise RuntimeError("The command gh is not installed.")
     except subprocess.SubprocessError as e:
@@ -231,7 +288,9 @@ def note_main(app, app_dir, argv):
         res = add(app, app_dir, text, a.source, {"via": "command line"})
     except ValueError as e:
         sys.exit(f"{app}: {e}")
-    if res.get("url"):
+    if res.get("url", "").startswith("local://"):
+        print(f"{app}: note saved in the local tracker: {res['url']}")
+    elif res.get("url"):
         print(f"{app}: note sent: {res['url']}")
     else:
         print(f"{app}: note kept in {QUEUE}; it goes to GitHub with the next note ({res['why']})")
@@ -260,11 +319,20 @@ def companions_of(m, p):
 # code of the proposal runs as the user, but it sees only the copies (and the files that the user grants to it).
 
 def worktree_of(app, app_dir, n):
-    """The folder ~/tools/wt/note-APP-N and the worktree of the app in it. The tests set VIEWKIT_WT in place of
-    ~/tools/wt."""
-    root = Path(os.environ["VIEWKIT_WT"]) if os.environ.get("VIEWKIT_WT") else Path(app_dir).resolve().parent / "wt"
+    """The folder ~/tools/wt/note-APP-N and the folder of the app in it: the worktree of the app (W/APP), or in the
+    repository viewers the folder of the app in the worktree of the whole repository (W/viewers/APP). The wt folder is
+    next to the app repositories, or next to the repository viewers. The tests set VIEWKIT_WT in place of it."""
+    mono = mono_root(app_dir)
+    base = mono.parent if mono else Path(app_dir).resolve().parent
+    root = Path(os.environ["VIEWKIT_WT"]) if os.environ.get("VIEWKIT_WT") else base / "wt"
     w = root / f"note-{app}-{n}"
-    return w, w / app
+    return (w, w / mono.name / app) if mono else (w, w / app)
+
+
+def kit_worktree_of(app, app_dir, n):
+    """The folder of viewkit for the proposal of note n: W/viewkit (a worktree of viewkit), or W/viewers/viewkit."""
+    w, wt = worktree_of(app, app_dir, n)
+    return wt.parent / "viewkit" if mono_root(app_dir) else w / "viewkit"
 
 
 def sandbox_port(n):
@@ -419,6 +487,7 @@ def start_auto(app, app_dir, res, doc, back, text=""):
         return res
     write_status(app, n, state="queued", message="The note waits for Claude.", doc=str(doc or ""), back=back or "",
                  live=str(Path(app_dir).resolve()), issue=res.get("url"), kitdir=str(RUNNER.parent),
+                 tracker=tracker_of_url(res.get("url")),
                  title=title_of(text) if text else None, summary=None, url=None, error=None, rev=0)
     spawn("implement", app, app_dir, n)
     res.update(n=n, run=True)
@@ -533,12 +602,13 @@ def dash_api(app, app_dir, method, op=None, doc=None, back=None):
         text = str(op.get("text") or "").strip()[:TEXT_MAX]
         if st.get("state") == "question" and not text:
             return 400, {"error": "Write your answer first."}
-        repo = repo_of(app_dir)
+        repo = notes_repo(app_dir)
         body = ("**Answer from the dashboard:**\n\n" + text) if text else "**Try again** (from the dashboard)."
         try:
-            _run([GH, "issue", "comment", str(n), "-R", repo, "--body-file", "-"], stdin=body)
-            _run([GH, "issue", "edit", str(n), "-R", repo, "--remove-label", "question"])
-        except (OSError, subprocess.SubprocessError) as e:
+            cmd = gh_cmd(st.get("tracker") or tracker_of_url(st.get("issue")) or tracker(repo))
+            _run(cmd + ["issue", "comment", str(n), "-R", repo, "--body-file", "-"], stdin=body)
+            _run(cmd + ["issue", "edit", str(n), "-R", repo, "--remove-label", "question"])
+        except (OSError, subprocess.SubprocessError, RuntimeError) as e:
             return 502, {"error": f"gh failed: {e}"}
         write_status(app, n, state="queued", message="Claude works on your answer." if text else "Claude tries again.",
                      error=None, live=st.get("live") or str(Path(app_dir).resolve()), kitdir=str(RUNNER.parent))

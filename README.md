@@ -52,8 +52,20 @@ The command opens the browser. In the page, select text to comment on it. To get
 | `/answer-page FILE.md` | Answer the comments on a page (pageview) |
 | `/page` | Make a pageview page from your data |
 | `/plate` | Make a plate from your data files |
+| `/improve APP` | Work on the notes to a viewer (see Improve the viewers) |
 
 The README of each viewer gives the details.
+
+## Improve the viewers
+
+The viewers can change from your notes, with Claude Code:
+
+1. In a viewer, push ⌘/Ctrl+Shift+. to open the dashboard. Write a note: a problem or a wish. Then click **Send all**.
+2. Claude makes a proposal in a separate worktree (`~/tools/wt/note-APP-N`), and runs the tests.
+3. A preview tab opens: the viewer of the proposal, with copies of your document. Click **Accept**, **Change** or **Reject**.
+4. **Accept** merges the proposal into your local `main`. The running viewers restart with the new code.
+
+The notes stay on your computer, in `~/.local/share/viewkit/issues/` (the local tracker). If you can push to the GitHub repository of your clone (for example your fork), the notes are GitHub issues there. After you accept or reject a proposal with a reason, Claude can add a rule to `viewkit/PRINCIPLES.md`, so the next proposals follow your preferences.
 
 ## Update
 
@@ -61,13 +73,15 @@ The README of each viewer gives the details.
 ~/tools/viewers/install.sh --update
 ```
 
+Your accepted proposals are commits on your `main`. The update merges them with the new commits. If they conflict, the script tells you, and you merge by hand with `git -C ~/tools/viewers pull`.
+
 ## Security
 
 The viewers read your files, and pyview runs code. By default, each server listens only on your computer (`127.0.0.1`) and accepts only requests with its access key. Read the section Security in the README of each viewer before you open files from other people.
 
 ## Problems and ideas
 
-Open an issue in this repository. The note box in the apps sends a note only to a repository that you can push to. In a clone of this repository, the notes stay on your computer.
+Open an issue in this repository. The note box in the apps does not send notes here: in a clone of this repository, the notes stay on your computer.
 
 ## License
 

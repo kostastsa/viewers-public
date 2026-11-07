@@ -20,17 +20,17 @@
 # You can run it again. It changes only what is not correct.
 #
 # Options:
-#   --update            also pull the new commits (only a clean checkout on its branch)
+#   --update            also pull the new commits (only a clean checkout on its branch). In the repository viewers,
+#                       your own commits (accepted proposals) stay: the update merges them with the new commits.
 #   --no-apps           do not build the macOS apps
 #   --no-venv           do not build the interpreter of pyview (you can run `pyview --setup` later)
 #   --config-dir DIR    link the skills into DIR/skills (default: $CLAUDE_CONFIG_DIR or ~/.claude). Use it again
 #                       for a second Claude Code configuration folder (then give the default folder too).
-#   --maintainer        also link the `improve` skill, if it is in viewkit/skills (the loop of the
-#                       self-improving apps, for the owner of the repositories)
+#   --maintainer        no effect (the `improve` skill is now linked for all users). Kept for old commands.
 set -euo pipefail
 
 APPS="mdview pyview pdfview pageview plateview"
-USER_SKILLS="answer-comments answer-cells answer-pdf answer-page page plate"
+USER_SKILLS="answer-comments answer-cells answer-pdf answer-page page plate improve"
 
 KIT="$(cd "$(dirname "$0")" && pwd -P)"
 ROOT="$(dirname "$KIT")"
@@ -52,7 +52,7 @@ while [ $# -gt 0 ]; do
   shift
 done
 [ -n "$configs" ] || configs="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
-skills="$USER_SKILLS"; [ $maintainer = 1 ] && skills="$skills improve"
+skills="$USER_SKILLS"
 
 say()  { printf '%-8s %s\n' "$1" "$2"; }
 warn() { printf 'WARNING  %s\n' "$1" >&2; }
@@ -77,7 +77,14 @@ pull() {  # pull <folder>: fast-forward a clean checkout
   if [ -n "$(git -C "$d" status --porcelain --untracked-files=no)" ] || [ -z "$b" ]; then
     warn "$(basename "$d"): not pulled (it has changes, or no branch)"; return
   fi
-  git -C "$d" pull -q --ff-only && say pulled "$(basename "$d") ($b)" || warn "$(basename "$d"): pull failed"
+  if git -C "$d" pull -q --ff-only 2>/dev/null; then say pulled "$(basename "$d") ($b)"; return; fi
+  if [ "${layout:-}" = mono ]; then
+    # Your accepted proposals are commits on your main: merge the new commits with them.
+    if git -C "$d" pull -q --no-rebase --no-edit; then say merged "$(basename "$d") ($b): your commits and the new commits"
+    else git -C "$d" merge --abort 2>/dev/null; warn "$(basename "$d"): the new commits conflict with your commits. Merge by hand: git -C \"$d\" pull"; fi
+    return
+  fi
+  warn "$(basename "$d"): pull failed"
 }
 
 # ------------------------------------------------------------------------------------------------ 1. repositories
@@ -171,6 +178,6 @@ need() {  # need <command> <what uses it> <how to install>
 need pandoc    "mdview and pageview need it"            "brew install pandoc"
 need pdftotext "pdfview text and pdfview crop need it"  "brew install poppler"
 need claude    "the chat and the Oracle button need it" "https://claude.com/claude-code"
-need gh        "only for notes to the apps (optional)"  "brew install gh"
+need gh        "optional: notes as GitHub issues (without it, the notes stay in the local tracker)" "brew install gh"
 
 echo "Done. Open a file, for example: mdview ~/tools/mdview/samples/review.md"
