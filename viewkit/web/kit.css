@@ -49,6 +49,10 @@ body.kitResizing iframe{pointer-events:none}
   border:1px solid var(--accent,currentColor);border-radius:10px;box-shadow:var(--kit-shadow-box);padding:12px 14px;
   font:13px/1.45 var(--ui,system-ui,sans-serif)}
 .kitDashHead{display:flex;gap:10px;align-items:baseline;margin-bottom:10px}
+/* a floating window that the user moves (kit movable): the dashboard and the preview card */
+.kitMoveHead{cursor:move;user-select:none;touch-action:none}
+.kitMoveHead button{cursor:pointer}
+.kitMoving{opacity:.92;user-select:none}
 .kitDashHint{flex:1;color:var(--muted,GrayText);font-size:12px}
 .kitDash button{font:inherit;cursor:pointer;border:1px solid var(--border,GrayText);border-radius:5px;padding:3px 12px;
   background:var(--bg,ButtonFace);color:var(--fg,ButtonText)}
@@ -127,3 +131,9 @@ body.kitResizing iframe{pointer-events:none}
 .kitPreviewFiles a:hover{text-decoration:underline}
 .kitPreviewFiles a.here{font-weight:600;color:var(--fg,CanvasText)}
 .kitPreview.small .kitPreviewFiles{display:none}
+
+/* The account selector of the chat panel (kit.chatPanel, opts.account), before New. */
+.kitAcct{font:inherit;font-size:12px;color:inherit;background:transparent;border:1px solid currentColor;border-radius:4px;
+  padding:0 4px;max-width:9em;cursor:pointer;opacity:.85}
+.kitAcct:hover{opacity:1}
+.kitAcct option{color:initial;background:initial}

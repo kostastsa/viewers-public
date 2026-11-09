@@ -6,7 +6,7 @@ description: Answer the #> comments in a Python cell file (a .py file with `# %%
 # Answer comments in a pyview cell file
 
 The user runs and reads Python cells in **pyview**, a local viewer started with the `pyview`
-command (installed at `~/tools/pyview`). The `.py` file is the master copy. The comments are
+command (installed at `~/tools/viewers/pyview`). The `.py` file is the master copy. The comments are
 lines in the file. Your job is to act on each open comment. Edit the code **directly**, run the
 cells to prove that the change works, and reply in the thread. The viewer follows the file and
 shows your changes at once.

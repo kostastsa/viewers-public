@@ -5,7 +5,7 @@ description: Make a plate, a temporary HTML page like a claude.ai Artifact that 
 
 # Make a plate
 
-**plateview** (`~/tools/plateview`) shows a plate: an HTML page that you write, in a sandboxed frame. The plate reads data files and images live through the `pv` library. It never holds a copy of the data. The full reference of `pv` and of the classes is in `~/tools/plateview/README.md`. Read the section "Write a plate" of it the first time in a session.
+**plateview** (`~/tools/viewers/plateview`) shows a plate: an HTML page that you write, in a sandboxed frame. The plate reads data files and images live through the `pv` library. It never holds a copy of the data. The full reference of `pv` and of the classes is in `~/tools/viewers/plateview/README.md`. Read the section "Write a plate" of it the first time in a session.
 
 ## Steps
 
@@ -16,10 +16,10 @@ description: Make a plate, a temporary HTML page like a claude.ai Artifact that 
 5. **Make the plate** with the folders that it may read. If the computer has a Tailscale address, use the Tailscale settings, so that the link opens on the other devices of the user. If it has no Tailscale address, the plate stays on this computer:
 
    ```
-   if [ -n "$(python3 -c 'import sys,os; sys.path.insert(0, os.path.expanduser("~/tools/viewkit")); import serverkit; print(serverkit.tailscale_ip() or "")')" ]; then
+   if [ -n "$(python3 -c 'import sys,os; sys.path.insert(0, os.path.expanduser("~/tools/viewers/viewkit")); import serverkit; print(serverkit.tailscale_ip() or "")')" ]; then
      export PLATEVIEW_BIND=tailscale PLATEVIEW_NAMES=${PLATEVIEW_NAMES:-$(scutil --get LocalHostName | tr A-Z a-z)}
    fi
-   PV="$(command -v plateview || echo python3 ~/tools/plateview/plateview.py)"
+   PV="$(command -v plateview || echo python3 ~/tools/viewers/plateview/plateview.py)"
    $PV --status      # with Tailscale: if it shows 127.0.0.1, run: $PV --restart
    $PV new /path/plate.html --allow ~/path/to/experiment/output --base ~/path/to/experiment
    ```
@@ -41,3 +41,4 @@ description: Make a plate, a temporary HTML page like a claude.ai Artifact that 
 - **Export.** If the plate loads a file only after a click, call `pv.need([...])` with those paths at the start, so that Export has them.
 - **Change a plate** with `plateview update ID FILE`. Do not make a new plate for a small change.
 - **Do not keep or delete** a plate unless the user asks.
+- **Comments.** The user can comment on a plate. `plateview comments ID` prints the comments, and `/answer-plate ID` answers them. Keep the words and the table keys of a plate when you change it, so that the comments find their place again. A comment on a cell names the data file of the table (or the `key` option).

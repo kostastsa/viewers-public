@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
-# Install the viewers (mdview, pyview, pdfview, pageview, plateview) and their Claude Code skills.
+# Install the viewers (mdview, pyview, pdfview, pageview, plateview, texview) and their Claude Code skills.
 #
-#   git clone https://github.com/kostastsa/viewers ~/tools/viewers     # all the viewers in one repository
+#   git clone https://github.com/kostastsa/viewers-public ~/tools/viewers     # all the viewers in one repository
 #   ~/tools/viewers/install.sh
 #
 # The script works in two layouts:
-#   - the repository viewers: the viewers and viewkit are folders of one clone, in any place. The script links
-#     ~/tools/APP to each folder, because the skills use the paths ~/tools/APP.
-#   - separate repositories: viewkit is a clone in ~/tools/viewkit. The script clones the viewers that are
-#     missing into ~/tools, from the same GitHub account as viewkit.
+#   - the repository viewers: the viewers and viewkit are folders of one clone, in any place. If the clone is not
+#     ~/tools/viewers, the script links ~/tools/viewers to it, because the skills use the paths ~/tools/viewers/APP.
+#   - separate repositories: viewkit is a clone in ~/tools/viewers/viewkit. The script clones the viewers that are
+#     missing into ~/tools/viewers, from the same GitHub account as viewkit.
 #
 # The script:
-#   1. finds or clones the viewers, and makes the links in ~/tools
-#   2. links each command into ~/.local/bin (mdview, pyview, pdfview, pageview, plateview)
+#   1. finds or clones the viewers, and makes the link ~/tools/viewers if necessary
+#   2. links each command into ~/.local/bin (mdview, pyview, pdfview, pageview, plateview, texview)
 #   3. links the skills of viewkit/skills into the skills folder of Claude Code
 #   4. builds the small macOS apps that open files from Finder (macOS only)
 #   5. builds the shared Python interpreter of pyview (numpy, pandas, matplotlib, ...)
-#   6. tells you which external tools it cannot find (pandoc, poppler, claude, gh)
+#   6. tells you which external tools it cannot find (pandoc, poppler, latexmk, claude, gh)
 # You can run it again. It changes only what is not correct.
 #
 # Options:
@@ -29,12 +29,12 @@
 #   --maintainer        no effect (the `improve` skill is now linked for all users). Kept for old commands.
 set -euo pipefail
 
-APPS="mdview pyview pdfview pageview plateview"
-USER_SKILLS="answer-comments answer-cells answer-pdf answer-page page plate improve"
+APPS="mdview pyview pdfview pageview plateview texview"
+USER_SKILLS="answer-comments answer-cells answer-pdf answer-page answer-tex answer-plate page plate improve"
 
 KIT="$(cd "$(dirname "$0")" && pwd -P)"
 ROOT="$(dirname "$KIT")"
-TOOLS="$HOME/tools"
+TOOLS="$HOME/tools/viewers"
 BIN="$HOME/.local/bin"
 update=0; apps=1; venv=1; maintainer=0; configs=""
 
@@ -66,8 +66,8 @@ python3 -c 'import sys; sys.exit(sys.version_info < (3, 9))' 2>/dev/null \
 top="$(git -C "$KIT" rev-parse --show-toplevel 2>/dev/null || true)"
 if [ -n "$top" ] && [ "$(cd "$top" && pwd -P)" = "$ROOT" ]; then layout=mono; else layout=separate; fi
 if [ $layout = separate ] && [ "$ROOT" != "$(mkdir -p "$TOOLS" && cd "$TOOLS" && pwd -P)" ]; then
-  echo "install.sh: viewkit must be in ~/tools/viewkit (it is in $KIT)." >&2
-  echo "Move it: mkdir -p ~/tools && mv \"$KIT\" ~/tools/viewkit" >&2
+  echo "install.sh: viewkit must be in ~/tools/viewers/viewkit (it is in $KIT)." >&2
+  echo "Move it: mkdir -p ~/tools/viewers && mv \"$KIT\" ~/tools/viewers/viewkit" >&2
   exit 1
 fi
 
@@ -89,16 +89,15 @@ pull() {  # pull <folder>: fast-forward a clean checkout
 
 # ------------------------------------------------------------------------------------------------ 1. repositories
 if [ $layout = mono ]; then
-  echo "== The repository viewers in $ROOT, and the links in $TOOLS"
+  echo "== The repository viewers in $ROOT"
   if [ $update = 1 ]; then pull "$ROOT"; fi
-  mkdir -p "$TOOLS"
-  for a in viewkit $APPS; do
-    src="$ROOT/$a" dst="$TOOLS/$a"
-    [ -d "$src" ] || { warn "$src is missing"; continue; }
-    if [ -L "$dst" ] && [ "$(readlink "$dst")" = "$src" ]; then say ok "$a"
-    elif [ -L "$dst" ] || [ ! -e "$dst" ]; then ln -sfn "$src" "$dst"; say linked "~/tools/$a"
-    else warn "$dst is a folder of its own, so the commands and the skills use it, not $src."; fi
-  done
+  if [ "$ROOT" = "$(cd "$TOOLS" 2>/dev/null && pwd -P)" ]; then say ok "$ROOT"
+  else
+    # The skills use the paths ~/tools/viewers/APP, so ~/tools/viewers must lead to the clone.
+    mkdir -p "$(dirname "$TOOLS")"
+    if [ -L "$TOOLS" ] || [ ! -e "$TOOLS" ]; then ln -sfn "$ROOT" "$TOOLS"; say linked "~/tools/viewers"
+    else warn "$TOOLS is a folder of its own, so the commands and the skills use it, not $ROOT."; fi
+  fi
 else
   # The viewers come from the same GitHub account as viewkit, so a fork installs the forks.
   origin="$(git -C "$KIT" remote get-url origin 2>/dev/null || true)"
@@ -178,6 +177,8 @@ need() {  # need <command> <what uses it> <how to install>
 need pandoc    "mdview and pageview need it"            "brew install pandoc"
 need pdftotext "pdfview text and pdfview crop need it"  "brew install poppler"
 need claude    "the chat and the Oracle button need it" "https://claude.com/claude-code"
+command -v latexmk >/dev/null 2>&1 || [ -x /Library/TeX/texbin/latexmk ] || [ ! -d "$TOOLS/texview" ] \
+  || warn "latexmk is missing: texview needs it to compile (brew install --cask mactex-no-gui)"
 need gh        "optional: notes as GitHub issues (without it, the notes stay in the local tracker)" "brew install gh"
 
-echo "Done. Open a file, for example: mdview ~/tools/mdview/samples/review.md"
+echo "Done. Open a file, for example: mdview ~/tools/viewers/mdview/samples/review.md"

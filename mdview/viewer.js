@@ -267,7 +267,7 @@ function typesetMath() {
   const roots = [docEl, $('tocList'), threadsEl, $('chatMsgs')].filter(r => r.querySelector('.math'));
   if (!roots.length) return;
   if (window.MathJax && MathJax.typesetPromise) {  // one typeset at a time, as MathJax asks
-    mathQueue = mathQueue.then(() => MathJax.typesetPromise(roots)).catch(() => {});
+    mathQueue = mathQueue.then(() => { kit.mathPrune(); return MathJax.typesetPromise(roots); }).catch(() => {});  // mathPrune: no old maths kept in memory
     return;
   }
   if (window.MathJax) return; // still loading; startup will typeset
@@ -1261,6 +1261,8 @@ kit.previewBand({
 
 const chat = kit.chatPanel({
   key: 'mdview',
+  account: {get: () => improveApi('GET', '/api/account?f=' + encodeURIComponent(FILE)),
+            post: body => improveApi('POST', '/api/account', body)},
   poll: true,
   ready: () => !!state,
   empty: 'Ask about this document. Claude can read it and change it. ' +

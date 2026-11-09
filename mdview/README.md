@@ -17,7 +17,7 @@ git and re-opening, and Claude can read them as plain text.
 | `viewer.html`, `viewer.js` | The page you read and comment on |
 | `safe.lua` | pandoc filter that makes documents inert (see Security) |
 | `vendor/mathjax/` | A trimmed local copy of MathJax 3.2.2, so maths works offline and nothing loads from the internet |
-| `../viewkit/` | The code that mdview and pyview share (server life cycle, the Claude chat run, the chat panel with its pulse and hotkey, the stand-in `claude` for the tests). It must be in the folder next to `mdview`, as `~/tools/viewkit` |
+| `../viewkit/` | The code that mdview and pyview share (server life cycle, the Claude chat run, the chat panel with its pulse and hotkey, the stand-in `claude` for the tests). It must be in the folder next to `mdview`, as `~/tools/viewers/viewkit` |
 | `tests/chat_browser_test.py` | Browser test of the chat panel. Needs Playwright and pandoc. Run: `uv run --with playwright python tests/chat_browser_test.py`. It makes its temporary folder in `tests/tmp/` (Git ignores it) and deletes it at the end. Set `MDVIEW_KEEP_TMP=1` to keep it. |
 | `~/.local/bin/mdview` | Link to `mdview.py`, so `mdview` works from any folder |
 | `../viewkit/skills/answer-comments/` | `/answer-comments`: Claude answers the comments in a file, proposing changes as suggestions (`--direct` to edit directly). `install.sh` of viewkit links it into `~/.claude/skills/`. |
@@ -30,7 +30,7 @@ Requires Python 3.9+, pandoc, and the folder `viewkit` next to `mdview`. No othe
 app/build.sh     # builds ~/Applications/mdview.app (run again to rebuild)
 ```
 
-Then select a `.md` file in Finder, choose Get Info > Open with > mdview > Change All…
+To make mdview the default app of `.md` files, run `app/build.sh --default` (it needs `duti`: `brew install duti`). Or select a `.md` file in Finder, choose Get Info > Open with > mdview > Change All…
 
 - The app has no window and no Dock icon. Its Finder icon is the tab icon of mdview.
 - It gives the files to `~/.local/bin/mdview`, so that link must exist. If you open the app with no file, it opens your home folder.

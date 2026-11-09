@@ -71,6 +71,8 @@ const kit = (() => {
   //   poll: true if the page polls get() (the server has no event stream). Otherwise call event(ev) for each chat event.
   //   ready(): when polling, false while the page cannot poll yet.
   //   skip: a selector, as for chatAttention.
+  //   account: {get(), post({account})}, the route /api/account (claudekit.account_api). With it, the panel shows the
+  //     account selector before New when there is more than one account.
   // Returns {load, event, poll, renderCtx, open, isOpen, busy, attn}. attn is the object of chatAttention.
   function chatPanel(opts) {
     const $ = id => document.getElementById(id);
@@ -306,14 +308,17 @@ const kit = (() => {
       }
     }
 
+    // Minimize keeps the scroll position of the messages: Open puts it back. If the messages were at the end, they go to
+    // the end again (also to an answer that came while the panel was closed).
     function open(on) {
+      if (!on && C.open) C.scroll = nearBottom() ? null : box.scrollTop;
       C.open = on;
       $('chatBox').hidden = !on;
       $('chatOpen').hidden = on;
       document.body.classList.toggle('chatopen', on);
       if (on) attn.opened();
       try { localStorage.setItem(opts.key + '.chat', on ? 'open' : 'closed'); } catch (e) { /* not saved */ }
-      if (on) { renderCtx(); bottom(); setTimeout(() => $('chatText').focus(), 0); if (opts.poll) poll(); }
+      if (on) { renderCtx(); if (C.scroll == null) bottom(); else box.scrollTop = C.scroll; setTimeout(() => $('chatText').focus(), 0); if (opts.poll) poll(); loadAccount(); }
     }
 
     async function send() {
@@ -331,6 +336,27 @@ const kit = (() => {
 
     function action(name) {
       return opts.post({action: name}).then(() => { if (opts.poll) return poll(); }).catch(e => err(e.message));
+    }
+
+    // The account selector, next to New, when there is more than one Claude Code account (claudekit.account_api).
+    // The choice is for this document (and the default of new documents). The chat and the Oracle use it from their next run.
+    let acct = null;
+    async function loadAccount() {
+      if (!opts.account) return;
+      try {
+        const d = await opts.account.get();
+        if (!d.accounts || d.accounts.length < 2) { if (acct) acct.hidden = true; return; }
+        if (!acct) {
+          acct = h('select', 'kitAcct');
+          acct.title = 'The Claude Code account of the chat and the Oracle for this document. It changes at the next run.';
+          acct.onchange = () => opts.account.post({account: acct.value})
+            .then(r => { acct.value = r.account; }).catch(e => { err(e.message); loadAccount(); });
+          $('chatNew').before(acct);
+        }
+        acct.replaceChildren(...d.accounts.map(n => { const o = h('option', null, n); o.value = n; return o; }));
+        acct.value = d.account;
+        acct.hidden = false;
+      } catch (e) { /* no selector */ }
     }
 
     $('chatOpen').onclick = () => open(true);
@@ -445,7 +471,7 @@ const kit = (() => {
     roots = [].concat(roots || []).filter(r => r && r.querySelector && r.querySelector('.math'));
     if (!roots.length) return;
     if (window.MathJax && MathJax.typesetPromise) {
-      mathQueue = mathQueue.then(() => MathJax.typesetPromise(roots)).catch(() => {});
+      mathQueue = mathQueue.then(() => { mathPrune(); return MathJax.typesetPromise(roots); }).catch(() => {});
       return;
     }
     mathWait.push(...roots);
@@ -464,13 +490,25 @@ const kit = (() => {
     document.head.appendChild(s);
   }
 
+  // MathJax keeps a list of all the maths that it typeset, and each item holds its DOM. When a page replaces content
+  // with maths (innerHTML, replaceChildren), the old items stay in the list, so the old DOM stays in memory. Remove
+  // the items that are no longer on the page. Call it in the typeset queue, just before MathJax.typesetPromise.
+  function mathPrune() {
+    const doc = window.MathJax && MathJax.startup && MathJax.startup.document;
+    if (!doc || !doc.math) return 0;
+    const gone = [];
+    for (const m of doc.math) { const n = m.start && m.start.node; if (!n || !n.isConnected) gone.push(m); }
+    if (gone.length) doc.math.remove(...gone);
+    return gone.length;
+  }
+
   // ------------------------------------------------------------ the tab icon
   // Each viewer has its own icon, so you know its browser tabs at once: mdview a blue M↓, pyview a yellow-green Py,
   // pdfview a red page, pageview a teal square with bars, plateview a slate square with panels. The icon also shows the state of the document:
   //   open: the number of open comments, in a badge at the bottom right
   //   chat, oracle: Claude works (the chat or the Oracle): a cyan dot at the top right
   //   ready: an answer waits for you: a yellow dot at the top right (the chat panel and chatAttention set it)
-  // Call kit.tab({app: 'md' | 'py' | 'pdf' | 'page' | 'plate'}) once, then kit.tab({...}) with the parts that change.
+  // Call kit.tab({app: 'md' | 'py' | 'pdf' | 'page' | 'plate' | 'tex'}) once, then kit.tab({...}) with the parts that change.
   const TAB = {app: null, open: 0, chat: false, oracle: false, ready: false};
   let tabLink = null, tabKey = '';
 
@@ -493,6 +531,16 @@ const kit = (() => {
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText('PDF', 32, 44);
       ctx.fillRect(17, 26, 20, 4);
+      return;
+    }
+    if (app === 'tex') {  // a purple square with the TeX mark: T, a lowered E, X
+      round(4, 4, 56, 56, 13);
+      ctx.fillStyle = '#6f4bc4';
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 22px Georgia, "Times New Roman", serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('T', 17, 28); ctx.fillText('E', 31, 36); ctx.fillText('X', 46, 28);
       return;
     }
     if (app === 'plate') {  // a slate square with three panels, one gold: a plate of figures and tables
@@ -639,6 +687,62 @@ const kit = (() => {
     el.append(n);
     el.title = label.path;
   }
+
+  // ------------------------------------------------------------ a floating window that the user moves
+  // Drag the header of the dashboard or of the preview card, so the page under it stays free (for example, to try a
+  // proposal in the sandbox). A double-click on the header gives the default place (the CSS) back. The place goes
+  // into localStorage (key), and the window opens there again. The header always stays in the window.
+  // Call movable() after the box is in the page. A button in the header does not start a drag.
+  const moved = new Set();
+  function placeAt(box, p) {
+    const s = box.style;
+    if (!p) { s.left = s.top = s.transform = ''; return; }
+    const r = box.getBoundingClientRect();
+    s.left = Math.round(Math.max(0, Math.min(innerWidth - Math.min(r.width, 120), p.x))) + 'px';
+    s.top = Math.round(Math.max(0, Math.min(innerHeight - 40, p.y))) + 'px';
+    s.transform = 'none';
+  }
+  function movable(box, head, key, what) {
+    head.classList.add('kitMoveHead');
+    head.title = `Drag to move the ${what}. Double-click: the default place.`;
+    head.addEventListener('pointerdown', ev => {
+      if (ev.button !== 0 || ev.target.closest('button')) return;
+      ev.preventDefault();
+      head.setPointerCapture(ev.pointerId);
+      const r0 = box.getBoundingClientRect(), x0 = ev.clientX, y0 = ev.clientY;
+      let p = null;
+      const move = e => { p = {x: r0.left + e.clientX - x0, y: r0.top + e.clientY - y0}; placeAt(box, p); };
+      const up = () => {
+        head.removeEventListener('pointermove', move);
+        head.removeEventListener('pointerup', up);
+        head.removeEventListener('pointercancel', up);
+        box.classList.remove('kitMoving');
+        if (!p) return;
+        const r = box.getBoundingClientRect();
+        try { localStorage.setItem(key, JSON.stringify({x: Math.round(r.left), y: Math.round(r.top)})); } catch (e) { /* not saved */ }
+      };
+      box.classList.add('kitMoving');
+      head.addEventListener('pointermove', move);
+      head.addEventListener('pointerup', up);
+      head.addEventListener('pointercancel', up);
+    });
+    head.addEventListener('dblclick', ev => {
+      if (ev.target.closest('button')) return;
+      placeAt(box, null);
+      try { localStorage.removeItem(key); } catch (e) { /* not saved */ }
+    });
+    try { const p = JSON.parse(localStorage.getItem(key)); if (p && isFinite(p.x) && isFinite(p.y)) placeAt(box, p); }
+    catch (e) { /* the default place */ }
+    moved.add(box);
+  }
+  addEventListener('resize', () => {
+    for (const box of moved) {
+      if (!box.isConnected) { moved.delete(box); continue; }
+      if (!box.style.left) continue;
+      const r = box.getBoundingClientRect();
+      placeAt(box, {x: r.left, y: r.top});
+    }
+  });
 
   // ------------------------------------------------------------ the dashboard (self-improving apps)
   // ⌘/Ctrl+Shift+. opens and closes the dashboard of the app. A note is about the app, not about the document.
@@ -836,6 +940,7 @@ const kit = (() => {
       box.append(head, cols, st, h('div', 'kitDashRuns'), h('div', 'kitDashErr'));
       box.addEventListener('keydown', ev => { if (ev.key === 'Escape' && !ev.defaultPrevented) { ev.preventDefault(); close(); } });
       document.body.append(box);
+      movable(box, head, app + '.dashPos', 'dashboard');
       draw();
       ta.focus();
       refresh();
@@ -901,6 +1006,7 @@ const kit = (() => {
     form.append(ta, send);
     card.append(head, sum, files, row, form, msg, err);
     document.body.append(card);
+    movable(card, head, 'kit.previewPos', 'card');
     document.title = `Preview #${st.n} · ` + document.title;
     let mode = null;
     function show(s) {
@@ -948,5 +1054,5 @@ const kit = (() => {
     }, 2000);
   }
 
-  return {title, chatAttention, chatPanel, md, typeset, tab, iconURL, docTitle, crumbs, copyText, improveDash, previewBand};
+  return {title, chatAttention, chatPanel, md, typeset, mathPrune, tab, iconURL, docTitle, crumbs, copyText, improveDash, previewBand};
 })();

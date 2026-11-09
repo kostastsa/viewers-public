@@ -102,8 +102,18 @@ footer { font-size: 13px; color: var(--muted); border-top: 1px solid var(--line)
 /* messages of the plate */
 #pv-toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 80; display: grid; gap: 6px }
 .pv-toastmsg { background: var(--fg); color: var(--bg); border-radius: 6px; padding: 6px 12px; font-size: 13px }
+/* print (the PDF of the print view): no motion, the colors of the charts, a panel stays on one page if it can */
+@media print {
+  * { transition: none !important; animation: none !important; -webkit-print-color-adjust: exact; print-color-adjust: exact }
+  .panel, .kpi, .pv-figure { break-inside: avoid }
+  #pv-toast { display: none }
+}
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important } }
 @media (max-width: 560px) { .cells button { padding: 8px 6px; font-size: 12px } }
 
 /* a chart in a panel: no box of its own */
 .panel .pv-chart { border: 0; padding: 0; background: transparent; box-shadow: none }
+/* The marks of the comments (the frame sends them, runtime.js paints them with the CSS Custom Highlight API). */
+::highlight(pv-mark) { background-color: rgba(250, 205, 70, .45) }
+::highlight(pv-active) { background-color: rgba(255, 160, 30, .55) }
+::highlight(pv-draft) { background-color: rgba(110, 150, 255, .35) }

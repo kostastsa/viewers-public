@@ -3,14 +3,14 @@ Finder. macOS 26 cuts an app icon to its own rounded shape and adds a glass effe
 flat drawing of kit.js. The browser tab and the folder pages use these files, so the tab icon is the same as the app icon.
 The apps in FLAT keep the flat drawing (APP-1024.png of make_icons.py) as the tab icon, with no gray plate.
 Run it on a Mac after app/build.sh of each viewer: python3 tests/app_icons.py
-The apps must be in ~/Applications (mdview.app, pyview.app, pdfview.app, pageview.app, plateview.app). A missing app is skipped."""
+The apps must be in ~/Applications (mdview.app, pyview.app, pdfview.app, pageview.app, plateview.app, texview.app). A missing app is skipped."""
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
 OUT = Path(__file__).resolve().parent.parent / "web" / "icons"
-APPS = {"md": "mdview", "py": "pyview", "pdf": "pdfview", "page": "pageview", "plate": "plateview"}
+APPS = {"md": "mdview", "py": "pyview", "pdf": "pdfview", "page": "pageview", "plate": "plateview", "tex": "texview"}
 FLAT = {"pdf"}  # the tab icon is the flat drawing: the red page, not the red page on the gray plate of macOS
 JXA = """ObjC.import('AppKit');
 function run(argv) {

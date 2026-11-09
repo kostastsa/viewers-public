@@ -1,0 +1,38 @@
+/* kit.pdfPages (pdfpages.js): the pages of a PDF. The app gives the colors --desk, --fg, --hl, --muted, --warn and --accent. */
+.kitPages{overflow:auto;background:var(--desk);position:relative;padding:16px 0 80px;outline:none}
+.page{position:relative;margin:0 auto 14px;background:#fff;box-shadow:0 1px 6px rgba(0,0,0,.4)}
+.page canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+.page .imgs{display:none}
+body.darkpages .page{background:#1f1f1f}
+body.darkpages .page canvas.base{filter:invert(.88) hue-rotate(180deg)}
+body.darkpages .page canvas.imgs{display:block}
+.page .num{position:absolute;right:-34px;top:2px;color:var(--muted);font-size:11px}
+.page .marks{position:absolute;inset:0;pointer-events:none;z-index:2;transform-origin:0 0}
+.page .marks div{position:absolute}
+/* a place that the app shows for a moment (texview: the place of a source line) */
+.page .marks div.sync{background:rgba(255,190,40,.35);outline:2px solid rgba(240,150,0,.9);border-radius:2px;
+  animation:kitSync 2.6s ease-out forwards}
+@keyframes kitSync{0%{opacity:1}70%{opacity:1}100%{opacity:0}}
+/* a link in the PDF under the pointer (pdfpages.js: linkAt); the links are blue in the page canvas (paintLinks) */
+.page.onlink,.page.onlink .textLayer,.page.onlink .textLayer :is(span,br){cursor:pointer}
+.page .loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#999;font-size:12px}
+/* the contents (opts.outline): put the class kitContents on the element of the outline, or on its panel */
+.kitContents ul{list-style:none;margin:0;padding:0 0 0 10px}
+.kitContents>ul,.kitContents>div>ul{padding-left:0}
+.kitContents li a{display:block;padding:2px 6px;color:var(--fg);text-decoration:none;border-radius:3px;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.kitContents li a:hover{background:var(--hl)}
+.kitContents .empty{color:var(--muted);padding:4px 6px}
+.err-page{padding:40px;color:var(--warn);font-size:14px;white-space:pre-wrap}
+
+/* PDF.js text layer (from pdf_viewer.css of pdfjs-dist 4.10.38, the parts that selection needs) */
+.textLayer{position:absolute;text-align:initial;inset:0;overflow:clip;opacity:1;line-height:1;-webkit-text-size-adjust:none;
+  text-size-adjust:none;forced-color-adjust:none;transform-origin:0 0;caret-color:CanvasText;z-index:1}
+.textLayer :is(span,br){color:transparent;position:absolute;white-space:pre;cursor:text;transform-origin:0% 0%}
+.textLayer > :not(.markedContent),.textLayer .markedContent span:not(.markedContent){z-index:1}
+.textLayer span.markedContent{top:0;height:0}
+.textLayer span[role="img"]{user-select:none;cursor:default}
+.textLayer ::selection{background:rgba(0,90,255,.3)}
+.textLayer br::selection{background:transparent}
+.textLayer .endOfContent{display:block;position:absolute;inset:100% 0 0;z-index:0;cursor:default;user-select:none}
+.textLayer.selecting .endOfContent{top:0}

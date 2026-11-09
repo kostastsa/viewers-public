@@ -9,6 +9,7 @@ import fcntl
 import hashlib
 import json
 import os
+import shutil
 import signal
 import subprocess
 import tempfile
@@ -26,11 +27,121 @@ SESSION_VARS = {"CLAUDECODE", "CLAUDE_PID", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CO
                 "XPC_FLAGS"}
 
 
-def clean_env(drop_prefix=None):
+def clean_env(drop_prefix=None, doc=None):
     """The environment of a run: ours, without the variables of the session that started the server.
-    With `drop_prefix`, also without every variable that starts with it."""
-    return {k: v for k, v in os.environ.items()
-            if k not in SESSION_VARS and not (drop_prefix and k.startswith(drop_prefix))}
+    With `drop_prefix`, also without every variable that starts with it. CLAUDE_CONFIG_DIR is the account of the
+    document `doc` (see `account`)."""
+    env = {k: v for k, v in os.environ.items()
+           if k not in SESSION_VARS and not (drop_prefix and k.startswith(drop_prefix))}
+    d = account(doc)[1]
+    if d == DEFAULT_DIR:
+        env.pop("CLAUDE_CONFIG_DIR", None)  # an explicit ~/.claude can use a different keychain entry: leave it out
+    else:
+        env["CLAUDE_CONFIG_DIR"] = str(d)
+    return env
+
+
+# Accounts: each Claude Code configuration folder (~/.claude, ~/.claude-NAME) has its own login and transcripts.
+# Each document has its own account, in ACCOUNT_FILE: {"default": NAME, "docs": {PATH: NAME}}. The last choice is also
+# the default of the documents without a choice. Each run (a chat turn, an Oracle round) reads the file, so a change has
+# effect at the next run. Without any choice: the CLAUDE_CONFIG_DIR of the server, else ~/.claude.
+DEFAULT_DIR = Path.home() / ".claude"
+ACCOUNT_FILE = Path(os.environ.get("VIEWKIT_ACCOUNT_FILE") or Path.home() / ".config" / "viewkit" / "accounts.json")
+_START_DIR = os.environ.get("CLAUDE_CONFIG_DIR")
+
+
+def accounts():
+    """The configuration folders, as {name: Path}: ~/.claude is "claude", ~/.claude-team is "claude-team"."""
+    out = {"claude": DEFAULT_DIR}
+    for d in sorted(Path.home().glob(".claude-*")):
+        if d.is_dir() and any((d / f).exists() for f in ("projects", ".claude.json", "settings.json")):
+            out[d.name[1:]] = d
+    if _START_DIR:
+        start = Path(_START_DIR).expanduser()
+        if start not in out.values():
+            name = start.name.lstrip(".") or str(start)
+            out[name if name not in out else str(start)] = start
+    return out
+
+
+def _choices():
+    try:
+        d = json.loads(ACCOUNT_FILE.read_text())
+    except (OSError, ValueError):
+        return {"default": "", "docs": {}}
+    docs = d.get("docs") if isinstance(d, dict) else None
+    return {"default": str(d.get("default") or ""), "docs": docs if isinstance(docs, dict) else {}}
+
+
+def account(doc=None):
+    """The account of document `doc` (a path, or None), as (name, Path): its own choice, else the last choice, else
+    the CLAUDE_CONFIG_DIR of the server, else ~/.claude."""
+    acc, c = accounts(), _choices()
+    for name in (c["docs"].get(str(doc)) if doc else None, c["default"]):
+        if name in acc:
+            return name, acc[name]
+    if _START_DIR:
+        start = Path(_START_DIR).expanduser()
+        for n, d in acc.items():
+            if d == start:
+                return n, d
+    return "claude", DEFAULT_DIR
+
+
+def account_api(method, body=None, doc=None):
+    """The route /api/account of the apps, for document `doc`. GET: {account, accounts}. POST {account: NAME}: select
+    it for this document, and make it the default of new documents. Returns (status, json)."""
+    if method == "POST":
+        name = str((body or {}).get("account", ""))
+        if name not in accounts():
+            return 400, {"error": f"No such account: {name}"}
+        set_account(doc, name, default=True)
+    return 200, {"account": account(doc)[0], "accounts": list(accounts())}
+
+
+def set_account(doc, name, default=False):
+    """Select account `name` for document `doc` (a path, or None). With `default`, also for new documents."""
+    ACCOUNT_FILE.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    lock = os.open(ACCOUNT_FILE.with_name(ACCOUNT_FILE.name + ".lock"), os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX)  # the servers of all apps write this file
+        c = _choices()
+        if default:
+            c["default"] = name
+        if doc:
+            c["docs"][str(doc)] = name
+        _write_private(ACCOUNT_FILE, json.dumps(c, indent=1) + "\n")
+    finally:
+        os.close(lock)
+
+
+def _projects(env):
+    d = env.get("CLAUDE_CONFIG_DIR")
+    return (Path(d).expanduser() if d else DEFAULT_DIR) / "projects"
+
+
+def session_files(sid):
+    """The transcripts of session `sid` in all accounts, newest first."""
+    found = [f for d in accounts().values() for f in (d / "projects").glob(f"*/{sid}.jsonl")]
+    return sorted(found, key=lambda f: f.stat().st_mtime, reverse=True)
+
+
+def carry_session(sid, env):
+    """Make the newest transcript of session `sid` available in the account of `env`, so `--resume` finds it there.
+    A session that started in one account continues in another. True if the account has the session now."""
+    found = session_files(sid)
+    if not found:
+        return False
+    src, target = found[0], _projects(env)
+    if src.parent.parent == target:
+        return True
+    dst = target / src.parent.name
+    dst.mkdir(mode=0o700, parents=True, exist_ok=True)
+    shutil.copy2(src, dst / src.name)
+    side = src.with_suffix("")  # the folder of the session (subagents, tool results), if there is one
+    if side.is_dir():
+        shutil.copytree(side, dst / side.name, dirs_exist_ok=True)
+    return True
 
 
 def tool_summary(block):
@@ -97,6 +208,10 @@ def run_stream(cmd, cwd, env, on_event, on_proc=None):
     `on_proc(proc)` is called when the process exists, so the app can stop it. Returns (error, stderr, returncode):
     `error` is a message if the process could not start, else None."""
     stderr, proc = [], None
+    if "--resume" in cmd:  # the session can have started in a different account
+        i = cmd.index("--resume")
+        if i + 1 < len(cmd):
+            carry_session(cmd[i + 1], env)
     try:
         proc = subprocess.Popen(cmd, cwd=str(cwd), env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace",
@@ -136,12 +251,12 @@ class Oracle:
         return {k: self.dir / f"{key}.{k}" for k in ("lock", "log", "exit", "json", "session")}
 
     def session(self, p):
-        """The id of the document's Claude session, if it still exists."""
+        """The id of the document's Claude session, if it still exists in one of the accounts."""
         try:
             sid = str(uuid.UUID(self.files(p)["session"].read_text().strip()))
         except (OSError, ValueError):
             return None
-        return sid if any((Path.home() / ".claude" / "projects").glob(f"*/{sid}.jsonl")) else None
+        return sid if session_files(sid) else None
 
     def busy(self, p):
         """True while a run holds the lock."""
@@ -187,10 +302,10 @@ class Oracle:
             except BlockingIOError:
                 return False
             f["exit"].unlink(missing_ok=True)
-            env = clean_env(self.drop_prefix)
+            env = clean_env(self.drop_prefix, p)
             env["ORACLE_EXIT"] = str(f["exit"])
             sid = self.session(p)
-            if sid:
+            if sid and carry_session(sid, env):
                 session = ["--resume", sid]
             else:
                 sid = str(uuid.uuid4())

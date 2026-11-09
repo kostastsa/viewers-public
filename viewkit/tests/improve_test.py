@@ -111,6 +111,7 @@ env = dict(os.environ, PATH=f"{bindir}:{os.environ['PATH']}", **{MAN["port_env"]
            **({MAN["claude_env"]: str(bindir / "claude")} if MAN.get("claude_env") else {}),
            VIEWKIT_GH=str(kit / "tests" / "fake_gh.py"), FAKE_GH_LOG=str(gh_log),
            VIEWKIT_NOTES_QUEUE=str(tmp / "queue.jsonl"), VIEWKIT_REPO=f"owner/{APP}", VIEWKIT_IMPROVE_DIR=str(state),
+           VIEWKIT_ACCOUNT_FILE=str(tmp / "accounts.json"),
            VIEWKIT_CLAUDE=str(bindir / "claude"), VIEWKIT_NO_OPEN="1", VIEWKIT_AUTO_IMPROVE="1",
            VIEWKIT_IMPROVE_TESTS=json.dumps(["test -f README.md", f"test -f {tmp / 'pass'}"]),  # fails until "pass" exists
            FAKE_CLAUDE_LOG=str(tmp / "claude.jsonl"),
@@ -305,7 +306,15 @@ try:
               and f"samples/{CFG['sample']}" in pv.url and pv.locator(".kitPreviewFiles a.here").inner_text() == CFG["sample"],
               pv.url)
 
+        acc = json.loads((tmp / "accounts.json").read_text()) if (tmp / "accounts.json").exists() else {}
+        check("the copy of the document in the sandbox has the account of the document",
+              (acc.get("docs") or {}).get(str((wt / f"sandbox-note-{n}" / CFG["doc"]).resolve())), acc)
+
         # --- 3. Change: feedback from the preview; Claude changes the proposal and the page reloads
+        # main moves first: Change rebases the proposal on it (improverun.catch_up)
+        (live / "UPSTREAM.txt").write_text("a commit on main after the proposal\n")
+        sh("git", "-C", str(live), "add", "UPSTREAM.txt")
+        sh("git", "-C", str(live), "commit", "-q", "-m", "a commit on main")
         pv.locator(".kitPreview button", has_text="Change").click()
         pv.locator(".kitPreviewForm textarea").fill("Also make it blue.")
         pv.locator(".kitPreviewForm textarea").press("Enter")
@@ -315,6 +324,7 @@ try:
         st2 = status(n)
         check("Change makes a second version of the proposal", st2.get("rev") == 2 and st2.get("state") == "preview"
               and "kit change" in (wkit / "README.md").read_text(), (st2, log_of(n)))
+        check("Change rebases the proposal on the new main", (wapp / "UPSTREAM.txt").is_file(), log_of(n))
         pv.wait_for_timeout(3000)
         pv.wait_for_selector(".kitPreview", timeout=20000)
         check("the preview reloads with the new version", "change" in pv.inner_text(".kitPreviewSum"),

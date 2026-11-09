@@ -11,12 +11,11 @@ pdfview never changes the PDF. The comments are in a JSON file next to the PDF, 
 | File | Purpose |
 |---|---|
 | `pdfview.py` | The `pdfview` command and the local server. It serves the PDF, keeps the comments file, and runs the chat. Standard library only. |
-| `viewer.html`, `viewer.js` | The page. |
-| `vendor/pdfjs/` | A local copy of PDF.js 4.10.38 (`pdfjs-dist` from npm): `pdf.min.mjs`, `pdf.worker.min.mjs`, `cmaps/`, `standard_fonts/`. Nothing loads from the internet. |
+| `viewer.html`, `viewer.js` | The page. The PDF pages come from the kit (`kit.pdfPages`, `../viewkit/web/pdfpages.js`), and PDF.js too (`../viewkit/web/vendor/pdfjs/`, version 4.10.38). Nothing loads from the internet. |
 | `tests/` | `test_ops.py` (no server), `browser_test.py` (Playwright), `make_fixture.py` and `fixture.pdf` (the test PDF). |
 | `samples/` | Sample PDFs, the baseline of the previews and of `tests/samples_test.py`: `paper.pdf` (an outline, equations, a theorem, a figure, a table, citations, links, three comment threads in `samples/.pdfview/`), `twocolumn.pdf`, `slides.pdf` (beamer) and `scan.pdf` (an image with no text layer). `make_samples.py` makes them again from `samples/src/` (needs pdflatex, pdftoppm and Pillow). |
 | `improve.json` | The manifest of the automatic loop: the tests, the port variable, the comments file, and the samples. |
-| `../viewkit/` | The code that mdview, pyview and pdfview share: the server life cycle, the Claude chat run, the chat panel, Markdown and maths for comments, and MathJax. It must be next to `pdfview`, as `~/tools/viewkit`. |
+| `../viewkit/` | The code that the viewers share: the server life cycle, the Claude chat run, the chat panel, the PDF pages and PDF.js (also for texview), Markdown and maths for comments, and MathJax. It must be next to `pdfview`, as `~/tools/viewers/viewkit`. |
 | `~/.local/bin/pdfview` | Link to `pdfview.py`, so `pdfview` works from any folder. The chat and the Oracle need it, because Claude calls `pdfview`. |
 | `../viewkit/skills/answer-pdf/` | `/answer-pdf`: the skill of the Oracle. Claude answers the open comments on a PDF. `install.sh` of viewkit links it into `~/.claude/skills/`. |
 
@@ -27,7 +26,7 @@ Requires Python 3.9 or newer and the folder `viewkit` next to `pdfview`. `pdftot
 Use `install.sh` (see the section Install in the README of `viewkit`). To install by hand, put `pdfview` and `viewkit` next to each other in `~/tools`, and link the command:
 
 ```
-ln -s ~/tools/pdfview/pdfview.py ~/.local/bin/pdfview
+ln -s ~/tools/viewers/pdfview/pdfview.py ~/.local/bin/pdfview
 ```
 
 ## Open `.pdf` files by double-clicking in Finder
@@ -36,7 +35,7 @@ ln -s ~/tools/pdfview/pdfview.py ~/.local/bin/pdfview
 app/build.sh     # builds ~/Applications/pdfview.app (run again to rebuild)
 ```
 
-Then select a `.pdf` file in Finder, choose Get Info > Open with > pdfview > Change All…
+To make pdfview the default app of `.pdf` files, run `app/build.sh --default` (it needs `duti`: `brew install duti`). Or select a `.pdf` file in Finder, choose Get Info > Open with > pdfview > Change All…
 
 - The app has no window and no Dock icon. Its Finder icon is the tab icon of pdfview.
 - It gives the files to `~/.local/bin/pdfview`, so that link must exist. If you open the app with no file, it opens your home folder.
@@ -79,7 +78,7 @@ One shared server runs in the background at `http://127.0.0.1:8767` (set `PDFVIE
 - **Zoom:** pinch on the trackpad, or use `−`, `+` and **Fit** in the header, or the keys `-`, `+` and `0`. **Fit** fits the width of the pages column. A pinch keeps the words under your fingers in place. The pages stretch while you pinch, and they become sharp when you stop. Control and the mouse wheel zoom too.
 - **Pages:** type a page number in the header and press Enter.
 - **Contents:** ☰ (or the key `o`) shows the contents of the PDF, if it has them.
-- **Links:** a click on a link to a place inside the PDF (a reference, a citation, an equation, a section) goes to that place. These links are blue, in light and in dark pages. The pointer becomes a hand on a link. ⌘/Ctrl+[ returns to the place before the link. A click on a link shows no notice. A drag on a link selects its words, as on other text. A web link in the PDF does not open.
+- **Links:** a click on a link to a place inside the PDF (a reference, a citation, an equation, a section) goes to that place. These links are blue, in light and in dark pages. The pointer becomes a hand on a link. ⌘/Ctrl+[ returns to the place before the link, and ⌘/Ctrl+] goes forward again. A section in the contents and a page number are jumps too. A click on a link shows no notice. A drag on a link selects its words, as on other text. A web link in the PDF does not open.
 - **Comments** (header, or ⌘/Ctrl+\\) hides and shows the sidebar.
 - **Oracle:** click **Oracle** at the top of the sidebar. It starts Claude Code in the background (`claude -p "/answer-pdf FILE"`, from the folder of the PDF). Claude reads the pages of the open comments and replies in each thread. The replies show in the sidebar while it works.
   - While it works, the button shows **Working… ■**. Click it to stop. When it ends, **Report** in the notice shows the summary of Claude.
@@ -152,4 +151,4 @@ Each test makes its temporary folder in `tests/tmp/`, and Git ignores this folde
 
 ## License
 
-MIT. See `LICENSE`. The files in `vendor/pdfjs/` are PDF.js (Apache License 2.0, `vendor/pdfjs/LICENSE`). The fonts and the CMaps in it have their own licenses in their folders.
+MIT. See `LICENSE`. PDF.js is in `../viewkit/web/vendor/pdfjs/` (Apache License 2.0, `LICENSE` there). The fonts and the CMaps in it have their own licenses in their folders.

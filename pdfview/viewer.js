@@ -1,20 +1,13 @@
 'use strict';
-// pdfview: the page. It shows the PDF with PDF.js, the comments in the sidebar, and the chat (kit.chatPanel).
+// pdfview: the page. It shows the PDF (kit.pdfPages, PDF.js), the comments in the sidebar, and the chat (kit.chatPanel).
 // The PDF is never changed. The comments live in a JSON file next to it, and the server changes that file.
 
 const $ = id => document.getElementById(id);
 const FILE = new URLSearchParams(location.search).get('f') || '';
-const PDFJS = '/vendor/pdfjs/';
-const MAX_RENDERED = 12;  // pages with canvases at one time; the others are blank until they come into view
 const CONTEXT = 40;       // characters before and after a quote, in an anchor
 
 const S = {
   doc: null,        // the payload of /api/doc: threads, version, ...
-  lib: null,        // the PDF.js module
-  pdf: null,        // the PDF.js document
-  pages: [],        // one per page: {n, w, h, vp1, el, state, gen, ...}
-  scale: 1, zoom: 'fit', gen: 0,
-  curPage: 1, want: new Set(), pumping: false,
   active: null,     // the id of the selected thread
   comp: null,       // the open comment box: {type: 'new' | 'general' | 'reply' | 'edit', anchor, thread, msg, text}
   sel: null,        // the anchor of the selected text, or null
@@ -98,291 +91,28 @@ function renderHeader() {
   $('undoBtn').disabled = !d.canUndo;
 }
 
-// ------------------------------------------------------------ PDF.js
-async function loadPdf(keepView) {
-  const view = keepView ? viewPoint() : {n: 1, frac: 0};
-  if (!S.lib) {
-    S.lib = await import(PDFJS + 'pdf.min.mjs');
-    S.lib.GlobalWorkerOptions.workerSrc = PDFJS + 'pdf.worker.min.mjs';
-  }
-  if (S.pdf) { S.pdf.destroy(); S.pdf = null; }
-  const task = S.lib.getDocument({
-    url: `/pdf?f=${enc(FILE)}&v=${enc(S.doc.pdf)}`, withCredentials: true,
-    cMapUrl: PDFJS + 'cmaps/', cMapPacked: true, standardFontDataUrl: PDFJS + 'standard_fonts/',
-    isEvalSupported: false,  // no eval: the Content-Security-Policy forbids it
-    enableXfa: false, disableRange: true, disableStream: true, disableAutoFetch: true,
-  });
-  try {
-    S.pdf = await task.promise;
-  } catch (e) {
-    $('pages').replaceChildren(el('div', 'err-page', 'Cannot open the PDF: ' + (e.message || e)));
-    return;
-  }
-  const box = $('pages');
-  box.replaceChildren();
-  S.pages = [];
-  for (let n = 1; n <= S.pdf.numPages; n++) {
-    const page = await S.pdf.getPage(n);
-    const vp1 = page.getViewport({scale: 1});
-    const pg = {n, w: vp1.width, h: vp1.height, vp1, state: 'empty', gen: -1};
-    pg.el = el('div', 'page');
-    pg.el.dataset.n = n;
-    pg.el.append(el('div', 'num', String(n)));
-    box.append(pg.el);
-    S.pages.push(pg);
-  }
-  $('pageCount').textContent = '/ ' + S.pdf.numPages;
-  layout(view);
-  loadOutline();
-}
+// ------------------------------------------------------------ the pages (kit.pdfPages, viewkit/web/pdfpages.js)
+// The kit draws the pages, the zoom and the pinch, the dark pages, the links and the contents. pdfview paints its marks
+// on each page when the kit has drawn it (paintMarks).
+const pv = kit.pdfPages({
+  box: $('pages'), zoomLabel: $('zoomLabel'), pageNum: $('pageNum'), pageCount: $('pageCount'), outline: $('outline'),
+  onPage: pg => paintMarks(pg),
+  onSize: () => placePop(),
+  skipClick: ev => !!(BOX.drag || ev.target.closest('#pop')),  // the end of a box drag, or a click in the comment box
+  onZoom: z => store('zoom', String(z)),
+  toast: msg => toast(msg),
+});
 
-// The scale: the zoom, or the width of the pages column.
-function fitScale() {
-  const maxW = Math.max(...S.pages.map(p => p.w), 1);
-  return Math.max(0.2, ($('pages').clientWidth - 72) / maxW);
-}
-
-// Set the scale and draw the pages again. The old drawings stay, stretched, until the new ones are ready, so the pages
-// do not flash. opts.noScroll: keep the scroll position as it is (after a pinch, which already placed the view).
-function layout(view, opts = {}) {
-  if (!S.pages.length) return;
-  view = opts.noScroll ? null : (view || viewPoint());
-  S.gen++;
-  S.scale = S.zoom === 'fit' ? fitScale() : S.zoom;
-  for (const pg of S.pages) clearPage(pg, true);
-  sizePages();
-  if (view) {
-    const pg = S.pages[view.n - 1];
-    if (pg) $('pages').scrollTop = pg.el.offsetTop + view.frac * pg.el.offsetHeight - 16;
-  }
-  onScroll();
-}
-
-// The page boxes at the scale S.scale. The text layer follows --scale-factor. A drawing made at another scale stretches
-// with its box (the canvases fill it), and its highlights get the same stretch.
-function sizePages() {
-  for (const pg of S.pages) {
-    pg.el.style.width = Math.floor(pg.w * S.scale) + 'px';
-    pg.el.style.height = Math.floor(pg.h * S.scale) + 'px';
-    pg.el.style.setProperty('--scale-factor', S.scale);
-    const k = pg.rscale ? S.scale / pg.rscale : 1;
-    for (const m of pg.el.querySelectorAll('.marks')) m.style.transform = Math.abs(k - 1) < 1e-6 ? '' : `scale(${k})`;
-  }
-  $('zoomLabel').textContent = Math.round(S.scale * 100) + '%';
-  placePop();
-}
-
-// Where the reader is: the page at the top of the view and how far down it, to keep it when the layout changes.
-function viewPoint() {
-  const box = $('pages'), top = box.scrollTop + 16;
-  if (!S.pages.length || !S.pages[0].el.offsetHeight) return null;  // no layout yet
-  for (const pg of S.pages) {
-    if (pg.el.offsetTop + pg.el.offsetHeight > top)
-      return {n: pg.n, frac: Math.max(0, (top - pg.el.offsetTop) / pg.el.offsetHeight)};
-  }
-  return null;
-}
-
-// Make a page ready to draw again. keep: leave its old drawing in place until the new one is ready.
-function clearPage(pg, keep) {
-  if (pg.task) { pg.task.cancel(); pg.task = null; }
-  if (pg.tl) { pg.tl.cancel(); pg.tl = null; }
-  pg.el.querySelectorAll('.loading').forEach(e => e.remove());
-  const old = [...pg.el.querySelectorAll('canvas, .textLayer, .marks')];
-  if (keep && (pg.state === 'done' || pg.stale)) pg.stale = pg.stale || old;
-  else { old.forEach(e => e.remove()); pg.stale = null; pg.rscale = null; }
-  pg.state = 'empty';
-  pg.text = null;
-  pg.ready = new Promise(r => { pg.resolve = r; });
-}
-
-function onScroll() {
-  const box = $('pages'), top = box.scrollTop, bottom = top + box.clientHeight, mid = (top + bottom) / 2;
-  const margin = box.clientHeight;
-  S.want = new Set();
-  for (const pg of S.pages) {
-    const a = pg.el.offsetTop, b = a + pg.el.offsetHeight;
-    if (b > top - margin && a < bottom + margin) S.want.add(pg);
-    if (a <= mid && b >= mid) S.curPage = pg.n;
-  }
-  if (document.activeElement !== $('pageNum')) $('pageNum').value = S.curPage;
-  pump();
-}
-
-// Render the wanted pages, the nearest first, one at a time.
-async function pump() {
-  if (S.pumping || P.active) return;  // no drawing while a pinch goes on
-  S.pumping = true;
-  try {
-    for (;;) {
-      const next = [...S.want].filter(p => p.state === 'empty')
-        .sort((a, b) => Math.abs(a.n - S.curPage) - Math.abs(b.n - S.curPage))[0];
-      if (!next) break;
-      await renderPage(next);
-      dropFar();
-    }
-  } finally { S.pumping = false; }
-}
-
-function dropFar() {
-  const done = S.pages.filter(p => p.state === 'done' && !S.want.has(p));
-  const extra = S.pages.filter(p => p.state === 'done').length - MAX_RENDERED;
-  done.sort((a, b) => Math.abs(b.n - S.curPage) - Math.abs(a.n - S.curPage));
-  for (const pg of done.slice(0, Math.max(0, extra))) clearPage(pg);
-}
-
-async function renderNow(pg) {
-  if (pg.state !== 'done') { S.want.add(pg); pump(); }
-  await pg.ready;
-}
-
-async function renderPage(pg) {
-  const gen = S.gen, scale = S.scale;
-  pg.state = 'rendering';
-  pg.gen = gen;
-  const loading = el('div', 'loading', '…');
-  if (!pg.stale) pg.el.append(loading);  // a page with its old drawing needs no "…"
-  try {
-    const page = await S.pdf.getPage(pg.n);
-    const vp = page.getViewport({scale});
-    const dpr = window.devicePixelRatio || 1;
-    const canvas = el('canvas', 'base');
-    canvas.width = Math.floor(vp.width * dpr);
-    canvas.height = Math.floor(vp.height * dpr);
-    const ctx = canvas.getContext('2d', {alpha: false});
-    pg.task = page.render({canvasContext: ctx, viewport: vp, transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : null});
-    await pg.task.promise;
-    if (gen !== S.gen || P.active) return;  // a new layout or a pinch: the drawing after it replaces this one
-    const ops = (pg.task._internalRenderTask && pg.task._internalRenderTask.operatorList) || await page.getOperatorList();
-    pg.task = null;
-    if (!pg.links) pg.links = await pageLinks(page, pg);
-    if (gen !== S.gen || P.active) return;
-    paintLinks(ctx, pg.links, canvas.width, canvas.height);
-    const imgs = imageCanvas(canvas, imageRects(ops, vp.transform, dpr, canvas.width, canvas.height));
-
-    const textDiv = el('div', 'textLayer');
-    pg.tl = new S.lib.TextLayer({textContentSource: page.streamTextContent(), container: textDiv, viewport: vp});
-    await pg.tl.render();
-    pg.tl = null;
-    if (gen !== S.gen || P.active) return;  // a new layout or a pinch: the drawing after it replaces this one
-    textDiv.append(el('div', 'endOfContent'));
-    const marks = el('div', 'marks');
-    loading.remove();
-    if (pg.stale) { pg.stale.forEach(e => e.remove()); pg.stale = null; }
-    pg.rscale = scale;
-    pg.el.append(canvas, imgs, textDiv, marks);
-    pg.textDiv = textDiv;
-    pg.marks = marks;
-    pg.text = pageText(textDiv);
-    pg.state = 'done';
-    paintMarks(pg);
-    pg.resolve();
-  } catch (e) {
-    if (gen !== S.gen || (e && e.name === 'RenderingCancelledException')) return;
-    if (pg.stale) { pg.stale.forEach(e => e.remove()); pg.stale = null; }
-    if (!loading.isConnected) pg.el.append(loading);
-    loading.textContent = 'Cannot draw this page: ' + (e.message || e);
-    pg.state = 'error';
-    pg.resolve();
-  }
-}
-
-// ------------------------------------------------------------ dark pages, images in their colors
-// In dark mode the page canvas is inverted with a CSS filter (and a hue turn, so colors stay close). A second canvas
-// on top holds the image areas of the page, copied from the page before the filter, so photos keep their colors.
-// The image areas come from the operator list of the page: the transform at each image drawing, applied to the unit
-// square that PDF images fill.
-function imageRects(ops, vt, dpr, W, H) {
-  const O = S.lib.OPS, out = [], stack = [];
-  let m = [1, 0, 0, 1, 0, 0], annot = 0;
-  const mul = (a, b) => [a[0] * b[0] + a[2] * b[1], a[1] * b[0] + a[3] * b[1], a[0] * b[2] + a[2] * b[3],
-    a[1] * b[2] + a[3] * b[3], a[0] * b[4] + a[2] * b[5] + a[4], a[1] * b[4] + a[3] * b[5] + a[5]];
-  const base = mul([dpr, 0, 0, dpr, 0, 0], vt);
-  const add = t => {
-    const f = mul(base, t), xs = [], ys = [];
-    for (const [x, y] of [[0, 0], [1, 0], [0, 1], [1, 1]]) { xs.push(f[0] * x + f[2] * y + f[4]); ys.push(f[1] * x + f[3] * y + f[5]); }
-    const x0 = Math.max(0, Math.floor(Math.min(...xs))), y0 = Math.max(0, Math.floor(Math.min(...ys)));
-    const x1 = Math.min(W, Math.ceil(Math.max(...xs))), y1 = Math.min(H, Math.ceil(Math.max(...ys)));
-    if (x1 - x0 >= 4 && y1 - y0 >= 4) out.push([x0, y0, x1 - x0, y1 - y0]);
-  };
-  for (let i = 0; i < ops.fnArray.length; i++) {
-    const fn = ops.fnArray[i], a = ops.argsArray[i];
-    if (fn === O.save || fn === O.beginGroup) stack.push(m);  // a group draws with the transform it starts with
-    else if (fn === O.restore || fn === O.endGroup || fn === O.paintFormXObjectEnd) m = stack.pop() || m;
-    else if (fn === O.transform) m = mul(m, a);
-    else if (fn === O.paintFormXObjectBegin) { stack.push(m); if (a[0]) m = mul(m, a[0]); }
-    else if (fn === O.beginAnnotation) annot++;  // images of annotations (stamps) are left as they are
-    else if (fn === O.endAnnotation) annot--;
-    else if (annot) continue;
-    else if (fn === O.paintImageXObject || fn === O.paintInlineImageXObject) add(m);
-    else if (fn === O.paintImageXObjectRepeat) {
-      const [, sx, sy, pos] = a;
-      for (let k = 0; k < pos.length; k += 2) add(mul(m, [sx, 0, 0, sy, pos[k], pos[k + 1]]));
-    }
-  }
-  // A scanned page is one large image: it is inverted with the page, so it is not copied.
-  return out.filter(([, , w, h]) => w * h < 0.8 * W * H);
-}
-
-function imageCanvas(src, rects) {
-  const c = el('canvas', 'imgs');
-  c.width = src.width;
-  c.height = src.height;
-  const ctx = c.getContext('2d');
-  for (const [x, y, w, h] of rects) ctx.drawImage(src, x, y, w, h, x, y, w, h);
-  return c;
-}
+function loadPdf(keepView) { return pv.load(`/pdf?f=${enc(FILE)}&v=${enc(S.doc.pdf)}`, keepView); }
 
 function setDark(on) {
   S.dark = on;
-  document.body.classList.toggle('darkpages', on);
+  pv.setDark(on);
   $('darkBtn').classList.toggle('on', on);
   store('dark', on ? '1' : '0');
 }
 
 // ------------------------------------------------------------ the text of a page, and anchors
-// The text of a page is its text layer: the text nodes in order, and a line break for each <br>.
-function pageText(div) {
-  const segs = [];
-  let s = '';
-  const w = document.createTreeWalker(div, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
-  for (let n = w.nextNode(); n; n = w.nextNode()) {
-    if (n.nodeType === 3) { segs.push({node: n, start: s.length, len: n.data.length}); s += n.data; }
-    else if (n.tagName === 'BR') { segs.push({node: n, start: s.length, len: 1, br: true}); s += '\n'; }
-  }
-  return {s, segs};
-}
-
-// The offset in the page text of a point of a selection (a node and an offset in it).
-function offsetOf(pg, node, off) {
-  if (node.nodeType === 3) {
-    const seg = pg.text.segs.find(g => g.node === node);
-    if (seg) return seg.start + off;
-  }
-  const r = document.createRange();
-  r.setStart(node, off);
-  for (const g of pg.text.segs) if (r.comparePoint(g.node, 0) >= 0) return g.start;
-  return pg.text.s.length;
-}
-
-function pointAt(pg, off, end) {
-  for (const g of pg.text.segs) {
-    if (off < g.start + g.len || (end && off === g.start + g.len)) {
-      if (g.br) { const p = g.node.parentNode; return [p, [...p.childNodes].indexOf(g.node) + (off > g.start ? 1 : 0)]; }
-      return [g.node, Math.min(g.len, Math.max(0, off - g.start))];
-    }
-  }
-  const last = pg.text.segs[pg.text.segs.length - 1];
-  return last ? [last.node, last.br ? 0 : last.len] : [pg.textDiv, 0];
-}
-
-function rangeOf(pg, a, b) {
-  const r = document.createRange();
-  r.setStart(...pointAt(pg, a, false));
-  r.setEnd(...pointAt(pg, b, true));
-  return r;
-}
-
 // The anchor of the selected text: on the page where the selection starts, cut at the end of that page.
 function selectionAnchor() {
   const s = getSelection();
@@ -391,10 +121,10 @@ function selectionAnchor() {
   const start = r.startContainer.nodeType === 3 ? r.startContainer.parentElement : r.startContainer;
   const pageEl = start && start.closest && start.closest('.page');
   if (!pageEl) return null;
-  const pg = S.pages[+pageEl.dataset.n - 1];
+  const pg = pv.pages[+pageEl.dataset.n - 1];
   if (!pg || !pg.text || !pg.textDiv.contains(r.startContainer)) return null;
-  let a = offsetOf(pg, r.startContainer, r.startOffset);
-  let b = pg.textDiv.contains(r.endContainer) ? offsetOf(pg, r.endContainer, r.endOffset) : pg.text.s.length;
+  let a = pv.offsetOf(pg, r.startContainer, r.startOffset);
+  let b = pg.textDiv.contains(r.endContainer) ? pv.offsetOf(pg, r.endContainer, r.endOffset) : pg.text.s.length;
   const t = pg.text.s;
   while (a < b && /\s/.test(t[a])) a++;
   while (b > a && /\s/.test(t[b - 1])) b--;
@@ -449,7 +179,7 @@ function paintMarks(pg) {
   pg.marks.replaceChildren();
   const box = pg.el.getBoundingClientRect();
   const draw = (a, b, cls, tid) => {
-    for (const r of rangeOf(pg, a, b).getClientRects()) {
+    for (const r of pv.rangeOf(pg, a, b).getClientRects()) {
       if (r.width < 1 || r.height < 1) continue;
       const d = el('div', cls);
       d.style.left = (r.left - box.left) + 'px';
@@ -519,16 +249,16 @@ function paintMarks(pg) {
   if (lostChanged) renderThreads();
 }
 
-function repaintMarks() { for (const pg of S.pages) paintMarks(pg); }
+function repaintMarks() { for (const pg of pv.pages) paintMarks(pg); }
 
 async function showAnchor(t) {
   if (!t.anchor) return;
-  const pg = S.pages[t.anchor.page - 1];
+  const pg = pv.pages[t.anchor.page - 1];
   if (!pg) return;
   const box = $('pages');
   if (pg.el.offsetTop > box.scrollTop + box.clientHeight || pg.el.offsetTop + pg.el.offsetHeight < box.scrollTop)
     box.scrollTop = pg.el.offsetTop - 16;
-  await renderNow(pg);
+  await pv.renderNow(pg);
   const marks = [...pg.el.querySelectorAll(`.marks div[data-t="${t.id}"]`)];
   if (!marks.length) return;
   const r = marks[0].getBoundingClientRect(), b = box.getBoundingClientRect();
@@ -598,7 +328,7 @@ function renderPop() {
 function placePop() {
   const p = $('pop'), c = S.comp;
   if (!p || !c || !c.at) return;
-  const pg = S.pages[c.anchor.page - 1];
+  const pg = pv.pages[c.anchor.page - 1];
   if (!pg) return;
   const x = pg.el.offsetLeft + c.at.fx * pg.el.offsetWidth;
   const right = Math.max(pg.el.offsetLeft + pg.el.offsetWidth, $('pages').clientWidth);
@@ -696,127 +426,14 @@ function setSide(on) {
   $('sideBtn').classList.toggle('on', on);
   $('sideBtn').title = (on ? 'Hide' : 'Show') + ' the comments (⌘/Ctrl+\\)';
   store('side', on ? 'on' : 'off');
-  setTimeout(() => { if (S.zoom === 'fit') layout(); else repaintMarks(); }, 0);
+  setTimeout(() => { if (pv.zoom === 'fit') pv.layout(); else repaintMarks(); }, 0);
 }
 
 function setNav(on) {
   document.body.classList.toggle('nonav', !on);
   $('navBtn').classList.toggle('on', on);
   store('nav', on ? 'on' : 'off');
-  setTimeout(() => { if (S.zoom === 'fit') layout(); else repaintMarks(); }, 0);
-}
-
-// ------------------------------------------------------------ the contents (the outline of the PDF)
-async function loadOutline() {
-  const box = $('outline');
-  let items = null;
-  try { items = await S.pdf.getOutline(); } catch (e) { /* none */ }
-  if (!items || !items.length) { box.replaceChildren(el('div', 'empty', 'This PDF has no contents.')); return; }
-  const list = xs => {
-    const ul = el('ul');
-    for (const it of xs) {
-      const li = el('li'), a = el('a', null, it.title || '(untitled)');
-      a.href = '#';
-      a.title = it.title || '';
-      a.addEventListener('click', ev => { ev.preventDefault(); if (it.dest) goDest(it.dest); });
-      li.append(a);
-      if (it.items && it.items.length) li.append(list(it.items));
-      ul.append(li);
-    }
-    return ul;
-  };
-  box.replaceChildren(list(items));
-}
-
-async function goDest(dest) {  // returns the page number, or null
-  try {
-    if (typeof dest === 'string') dest = await S.pdf.getDestination(dest);
-    if (!Array.isArray(dest)) return;
-    const idx = typeof dest[0] === 'object' ? await S.pdf.getPageIndex(dest[0]) : dest[0];
-    const pg = S.pages[idx];
-    if (!pg) return;
-    const kind = dest[1] && dest[1].name;
-    const y = kind === 'XYZ' ? dest[3] : (kind === 'FitH' || kind === 'FitBH') ? dest[2] : null;
-    const off = y != null ? pg.vp1.convertToViewportPoint(0, y)[1] * S.scale : 0;
-    $('pages').scrollTop = pg.el.offsetTop + Math.max(0, off) - 16;
-    return idx + 1;
-  } catch (e) { toast('Cannot go to this place: ' + (e.message || e)); }
-  return null;
-}
-
-// ------------------------------------------------------------ links in the PDF
-// A link to a place inside the PDF (a reference, a citation, an equation, a section) goes there on a click, and
-// ⌘/Ctrl+[ comes back. A web link does not open (see Security in the README). The page has no link
-// elements: a click that is not a drag looks for a link under the pointer, so text selection works on links too.
-async function pageLinks(page, pg) {
-  let annots = [];
-  try { annots = await page.getAnnotations({intent: 'display'}); } catch (e) { /* none */ }
-  const out = [];
-  for (const a of annots) {
-    if (a.subtype !== 'Link' || !a.dest || a.url || !Array.isArray(a.rect)) continue;
-    const [x0, y0, x1, y1] = pg.vp1.convertToViewportRectangle(a.rect);
-    out.push({dest: a.dest, l: Math.min(x0, x1) / pg.w, r: Math.max(x0, x1) / pg.w,
-              t: Math.min(y0, y1) / pg.h, b: Math.max(y0, y1) / pg.h});
-  }
-  return out;
-}
-// The color of the links, drawn into the page canvas: 'lighten' makes the dark text in a link box the link color and
-// leaves the paper as it is. The dark pages invert the canvas with a hue turn, so the links stay blue there (a light
-// blue). No layer with a CSS blend mode over the page: while you scroll, a browser can show such a layer as a solid box
-// over the words (pdfview#3).
-const LINK_COLOR = '#1f5fd6';
-function paintLinks(ctx, links, W, H) {
-  if (!links || !links.length) return;
-  ctx.save();
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.globalCompositeOperation = 'lighten';
-  ctx.fillStyle = LINK_COLOR;
-  for (const k of links) ctx.fillRect(k.l * W, k.t * H, (k.r - k.l) * W, (k.b - k.t) * H);
-  ctx.restore();
-}
-function linkAt(ev) {
-  const pageEl = ev.target.closest && ev.target.closest('.page');
-  const pg = pageEl && S.pages[+pageEl.dataset.n - 1];
-  if (!pg || !pg.links || !pg.links.length) return null;
-  const r = pageEl.getBoundingClientRect(), fx = (ev.clientX - r.left) / r.width, fy = (ev.clientY - r.top) / r.height;
-  return pg.links.find(k => fx >= k.l && fx <= k.r && fy >= k.t && fy <= k.b) || null;
-}
-const BACK = [];  // the places before the links that you followed: {i: page index, f: the part of the page above the top}
-function here() {
-  const top = $('pages').scrollTop + 16;
-  let i = 0;
-  while (i + 1 < S.pages.length && S.pages[i + 1].el.offsetTop <= top) i++;
-  const p = S.pages[i].el;
-  return {i, f: (top - p.offsetTop) / p.offsetHeight};
-}
-function goBack() {
-  const b = BACK.pop(), pg = b && S.pages[b.i];  // the PDF can change on disk and have fewer pages
-  if (!pg) return false;
-  const p = pg.el;
-  $('pages').scrollTop = p.offsetTop + b.f * p.offsetHeight - 16;
-  return true;
-}
-async function followLink(k) {
-  const from = here(), n = await goDest(k.dest);
-  if (n != null) BACK.push(from);  // no notice at the bottom: it covered the page (pdfview#4)
-}
-$('pages').addEventListener('click', ev => {
-  if (ev.button !== 0 || ev.altKey || ev.metaKey || ev.ctrlKey || ev.shiftKey || BOX.drag) return;
-  if (ev.target.closest('#pop') || !getSelection().isCollapsed) return;  // a drag that selected text is not a click
-  const k = linkAt(ev);
-  if (k) { ev.preventDefault(); followLink(k); }
-});
-$('pages').addEventListener('mousemove', ev => {
-  const pageEl = ev.target.closest && ev.target.closest('.page');
-  const on = !!(pageEl && !ev.buttons && linkAt(ev));
-  for (const e of document.querySelectorAll('.page.onlink')) if (e !== pageEl || !on) e.classList.remove('onlink');
-  if (on) pageEl.classList.add('onlink');
-}, {passive: true});
-
-
-function goPage(n) {
-  const pg = S.pages[Math.min(S.pages.length, Math.max(1, n)) - 1];
-  if (pg) $('pages').scrollTop = pg.el.offsetTop - 16;
+  setTimeout(() => { if (pv.zoom === 'fit') pv.layout(); else repaintMarks(); }, 0);
 }
 
 // ------------------------------------------------------------ selection: comment button and chat context
@@ -842,8 +459,8 @@ function commentOnSelection() {
   const an = S.sel || selectionAnchor();
   if (!an) { toast('Select text on a page first.'); return; }
   // The box goes under the last line of the words, on the page where they start.
-  const pg = S.pages[an.page - 1], box = pg.el.getBoundingClientRect();
-  const rects = [...rangeOf(pg, an.a, an.b).getClientRects()].filter(r => r.width >= 1 && r.height >= 1);
+  const pg = pv.pages[an.page - 1], box = pg.el.getBoundingClientRect();
+  const rects = [...pv.rangeOf(pg, an.a, an.b).getClientRects()].filter(r => r.width >= 1 && r.height >= 1);
   const last = rects[rects.length - 1];
   const at = last ? {fx: (last.left - box.left) / box.width, fy: (last.bottom - box.top) / box.height} : {fx: 0, fy: 0};
   $('selbar').style.display = 'none';
@@ -868,7 +485,7 @@ $('pages').addEventListener('mousedown', ev => {
   if (ev.button !== 0 || !ev.altKey) return;
   const pageEl = ev.target.closest && ev.target.closest('.page');
   if (!pageEl || ev.target.closest('#pop')) return;
-  const pg = S.pages[+pageEl.dataset.n - 1];
+  const pg = pv.pages[+pageEl.dataset.n - 1];
   if (!pg || pg.state !== 'done') return;
   ev.preventDefault();  // no text selection
   getSelection().removeAllRanges();
@@ -945,13 +562,13 @@ $('hcomment').addEventListener('click', () => {  // the comment box opens at the
   const h = hmenuFor;
   closeHmenu();
   if (!h) return;
-  const a = h.anchor, pg = S.pages[a.page - 1];
+  const a = h.anchor, pg = pv.pages[a.page - 1];
   let at = {fx: 0, fy: 0};
   if (a.box) at = {fx: a.box[0] / pg.w, fy: a.box[3] / pg.h};
   else {
     const loc = pg.text && locate(pg.text.s, a);
     if (loc) {
-      const r = [...rangeOf(pg, loc.a, loc.b).getClientRects()].filter(x => x.width >= 1).pop(), b = pg.el.getBoundingClientRect();
+      const r = [...pv.rangeOf(pg, loc.a, loc.b).getClientRects()].filter(x => x.width >= 1).pop(), b = pg.el.getBoundingClientRect();
       if (r) at = {fx: (r.left - b.left) / b.width, fy: (r.bottom - b.top) / b.height};
     }
   }
@@ -965,13 +582,15 @@ $('pages').addEventListener('mousedown', ev => {
 // ------------------------------------------------------------ chat
 const chat = kit.chatPanel({
   key: 'pdfview',
+  account: {get: () => api('GET', '/api/account?f=' + encodeURIComponent(FILE)),
+            post: body => api('POST', '/api/account', body)},
   poll: true,
   ready: () => !!S.doc,
   empty: 'Ask about this PDF. Claude can read it, and it answers or adds comments when you ask. ' +
     'It runs on the computer that serves this page. Turn on "Ask only" if it must not change anything.',
   get: since => api('GET', `/api/chat?f=${enc(FILE)}` + (since == null ? '' : `&since=${since}`)),
   post: body => api('POST', '/api/chat', body),
-  extra: () => ({quote: chatSel ? chatSel.quote : '', page: chatSel ? chatSel.page : null, view_page: S.curPage}),
+  extra: () => ({quote: chatSel ? chatSel.quote : '', page: chatSel ? chatSel.page : null, view_page: pv.curPage}),
   afterSend: () => { chatSel = null; },
   context: () => chatSel && {text: `p. ${chatSel.page} “${chatSel.quote}”`, title: chatSel.quote},
   hint: () => 'Select text to ask about it.',
@@ -994,7 +613,7 @@ kit.improveDash({
   get: () => api('GET', `/api/improve/dash?f=${enc(FILE)}`),
   post: body => api('POST', '/api/improve/dash', body),
   context: () => ({
-    page: S.curPage, pages: S.pages.length, zoom: S.zoom === 'fit' ? 'fit' : S.scale, dark: !!S.dark,
+    page: pv.curPage, pages: pv.pages.length, zoom: pv.zoom === 'fit' ? 'fit' : pv.scale, dark: !!S.dark,
     sidebar: !document.body.classList.contains('noside'), contents: !document.body.classList.contains('nonav'),
     comments: S.doc ? S.doc.threads.length : 0, composing: S.comp ? S.comp.type : null,
     chat: !$('chatBox').hidden, oracle: !!(oracle && oracle.running), selection: !!S.sel,
@@ -1063,13 +682,12 @@ $('newSession').onclick = () => {
 
 // ------------------------------------------------------------ controls and keys
 function setZoom(z) {
-  S.zoom = z === 'fit' ? 'fit' : Math.min(5, Math.max(0.25, z));
-  store('zoom', String(S.zoom));
-  layout();
+  pv.setZoom(z);
+  store('zoom', String(pv.zoom));
 }
 
-$('zoomIn').onclick = () => setZoom(Math.round(S.scale * 1.2 * 100) / 100);
-$('zoomOut').onclick = () => setZoom(Math.round(S.scale / 1.2 * 100) / 100);
+$('zoomIn').onclick = () => setZoom(Math.round(pv.scale * 1.2 * 100) / 100);
+$('zoomOut').onclick = () => setZoom(Math.round(pv.scale / 1.2 * 100) / 100);
 $('zoomFit').onclick = () => setZoom('fit');
 $('darkBtn').onclick = () => setDark(!S.dark);
 $('undoBtn').onclick = undo;
@@ -1081,85 +699,16 @@ $('resolveAllBtn').onclick = () => {
   if (n && confirm(`Resolve all ${n} comment${n > 1 ? 's' : ''}? They are removed (Undo brings them back).`))
     op({op: 'resolve-all'}, 'All comments resolved.');
 };
-$('pageNum').addEventListener('keydown', ev => {
-  if (ev.key === 'Enter') { goPage(parseInt(ev.target.value, 10) || 1); $('pages').focus(); }
-  else if (ev.key === 'Escape') { ev.target.value = S.curPage; $('pages').focus(); }
-});
-$('pageNum').addEventListener('focus', ev => ev.target.select());
-
-// ------------------------------------------------------------ pinch to zoom (trackpad)
-// Chrome and Firefox send a pinch as wheel events with ctrlKey. Safari sends gesturestart, gesturechange and gestureend
-// with a scale. While the fingers move, the pages only stretch (fast), and the point under the fingers stays in place.
-// When the pinch ends, the pages are drawn again, sharp, at the new scale.
-const P = {active: false, scale: 1, g0: 1, at: null, timer: 0, safari: false};
-
-function pinchAnchor(cx, cy) {  // the page under the point, and where in it, as fractions
-  const box = $('pages'), r = box.getBoundingClientRect();
-  const x = box.scrollLeft + cx - r.left, y = box.scrollTop + cy - r.top;
-  const pg = S.pages.find(p => p.el.offsetTop + p.el.offsetHeight >= y) || S.pages[S.pages.length - 1];
-  if (!pg) return null;
-  return {pg, fx: (x - pg.el.offsetLeft) / pg.el.offsetWidth, fy: (y - pg.el.offsetTop) / pg.el.offsetHeight, cx, cy};
-}
-
-function pinchBegin(cx, cy) {
-  if (P.active || !S.pages.length) return;
-  P.active = true;
-  P.scale = S.scale;
-  P.at = pinchAnchor(cx, cy);
-}
-
-function pinchTo(scale) {
-  if (!P.active) return;
-  P.scale = Math.min(5, Math.max(0.25, scale));
-  S.scale = P.scale;
-  sizePages();
-  const a = P.at;
-  if (a) {
-    const box = $('pages'), r = box.getBoundingClientRect();
-    box.scrollLeft = a.pg.el.offsetLeft + a.fx * a.pg.el.offsetWidth - (a.cx - r.left);
-    box.scrollTop = a.pg.el.offsetTop + a.fy * a.pg.el.offsetHeight - (a.cy - r.top);
-  }
-}
-
-function pinchEnd() {
-  if (!P.active) return;
-  P.active = false;
-  S.zoom = Math.round(P.scale * 100) / 100;
-  store('zoom', String(S.zoom));
-  layout(null, {noScroll: true});
-}
-
-$('pages').addEventListener('wheel', ev => {
-  if (!ev.ctrlKey || P.safari) return;  // a plain wheel scrolls
-  ev.preventDefault();  // not the zoom of the whole page
-  pinchBegin(ev.clientX, ev.clientY);
-  pinchTo(P.scale * Math.exp(-ev.deltaY * (ev.deltaMode === 1 ? 0.05 : 0.01)));
-  clearTimeout(P.timer);
-  P.timer = setTimeout(pinchEnd, 250);
-}, {passive: false});
-for (const [type, fn] of [
-  ['gesturestart', ev => { P.safari = true; pinchBegin(ev.clientX, ev.clientY); P.g0 = P.scale; }],
-  ['gesturechange', ev => pinchTo(P.g0 * ev.scale)],
-  ['gestureend', () => { P.safari = false; pinchEnd(); }],
-]) $('pages').addEventListener(type, ev => { ev.preventDefault(); fn(ev); }, {passive: false});
-
-let scrollRaf = 0;
-$('pages').addEventListener('scroll', () => { if (!scrollRaf) scrollRaf = requestAnimationFrame(() => { scrollRaf = 0; onScroll(); }); });
-let resizeTimer = 0;
-window.addEventListener('resize', () => {
-  clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(() => { if (S.zoom === 'fit') layout(); else repaintMarks(); }, 150);
-});
 
 document.addEventListener('keydown', ev => {
   const mod = ev.metaKey || ev.ctrlKey;
   if (mod && ev.shiftKey && (ev.key === 'M' || ev.key === 'm')) { ev.preventDefault(); commentOnSelection(); return; }
   if (mod && ev.shiftKey && (ev.key === 'H' || ev.key === 'h')) { ev.preventDefault(); highlightSelection(); return; }
-  if (mod && !ev.shiftKey && ev.code === 'BracketLeft' && BACK.length) { ev.preventDefault(); goBack(); return; }
+  if (pv.navKey(ev)) return;  // ⌘/Ctrl+[ and ⌘/Ctrl+]: back and forward over the jumps in the PDF
   if (mod && ev.key === '\\') { ev.preventDefault(); setSide(document.body.classList.contains('noside')); return; }
   if (mod || ev.altKey || typing(ev.target)) return;
-  if (ev.key === '+' || ev.key === '=') setZoom(Math.round(S.scale * 1.2 * 100) / 100);
-  else if (ev.key === '-') setZoom(Math.round(S.scale / 1.2 * 100) / 100);
+  if (ev.key === '+' || ev.key === '=') setZoom(Math.round(pv.scale * 1.2 * 100) / 100);
+  else if (ev.key === '-') setZoom(Math.round(pv.scale / 1.2 * 100) / 100);
   else if (ev.key === '0') setZoom('fit');
   else if (ev.key === 'd') setDark(!S.dark);
   else if (ev.key === 'o') setNav(document.body.classList.contains('nonav'));
@@ -1195,7 +744,7 @@ async function poll() {
   setSide(stored('side') !== 'off');
   setNav(stored('nav') === 'on');
   const z = stored('zoom');
-  S.zoom = z && z !== 'fit' && !isNaN(+z) ? +z : 'fit';
+  pv.zoom = z && z !== 'fit' && !isNaN(+z) ? +z : 'fit';
   if (!FILE) { $('pages').replaceChildren(el('div', 'err-page', 'No file. Open one with: pdfview FILE.pdf')); return; }
   if (!await loadDoc()) return;
   oracleCall();

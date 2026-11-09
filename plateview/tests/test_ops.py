@@ -1,5 +1,5 @@
-"""Tests of plateview without a server: plates, the files that a plate may read, the lifetime, the page of a plate,
-Export, and the command line. Run: python3 tests/test_ops.py
+"""Tests of plateview without a browser: plates, the files that a plate may read, the lifetime, the page of a plate,
+Export, the comments, the copy of a plate for the preview of a note, and the command line. Run: python3 tests/test_ops.py
 It uses its own state folder in tests/tmp and deletes it at the end. Set PLATEVIEW_KEEP_TMP=1 to keep it."""
 import json
 import os
@@ -16,6 +16,8 @@ TMP_ROOT.mkdir(exist_ok=True)
 tmp = Path(tempfile.mkdtemp(prefix="ops-", dir=TMP_ROOT))
 os.environ["PLATEVIEW_STATE"] = str(tmp / "state")
 os.environ["PLATEVIEW_GRACE"] = "2"
+os.environ["PLATEVIEW_PORT"] = "8817"  # its own server: the --stop at the end never stops the server that you use
+os.environ.pop("VIEWKIT_PREVIEW", None)
 os.environ.pop("CLAUDE_PID", None)  # the plates of these tests have no Claude session
 sys.path.insert(0, str(HERE.parent))
 import plateview as pv  # noqa: E402
@@ -112,6 +114,13 @@ try:
     check("an export holds the JSON files as they are", '"json": {"sel.json": {"json": {"a0.5"' in html)
     check("an export has a CSP with no network", 'http-equiv="Content-Security-Policy"' in html and "connect-src" not in
           html.split('http-equiv="Content-Security-Policy" content="')[1].split('"')[0])
+    check("an export does not open the print dialog", "print()" not in html)
+    phtml, _ = pv.export_plate(m3["id"], printing=True)
+    check("the print view is the export with the print script", "print()" in phtml and '"runs.csv": {"columns"' in phtml)
+    check("the print view is a sandbox with no network that may open the print dialog",
+          "sandbox allow-scripts allow-modals;" in pv.CSP_PRINT and "connect-src" not in pv.CSP_PRINT
+          and "allow-same-origin" not in pv.CSP_PRINT and "allow-popups" not in pv.CSP_PRINT
+          and "frame-ancestors 'none'" in pv.CSP_PRINT)
 
     # ---- the command line
     r = cli("new", str(data / "demo.html"), "--no-open")
@@ -129,6 +138,57 @@ try:
     check("plateview list shows the plates", r.returncode == 0 and pid in r.stdout and "Second version" in r.stdout, r.stdout)
     r = cli("keep", pid)
     check("plateview keep", r.returncode == 0 and pv.read_meta(pid)["kept"] is True)
+
+    # ---- the comments
+    t1 = pv.change(pid, {"op": "add", "anchor": {"quote": "Second", "prefix": "x" * 90, "suffix": " version"}, "text": "Why?"})[0]
+    th = pv.read_comments(pid)[0]["threads"][0]
+    check("a comment on words keeps the words and 40 characters around them", t1 == 1 and th["anchor"] ==
+          {"quote": "Second", "prefix": "x" * 40, "suffix": " version"}, th)
+    check("an empty comment is refused", "Write a comment" in (raises(lambda: pv.change(pid, {"op": "add", "text": " "})) or ""))
+    check("a cell comment needs a column", "column" in (raises(lambda: pv.change(pid, {"op": "add", "anchor": {"table": "t"},
+                                                                                    "text": "x"})) or ""))
+    old_v = pv.read_comments(pid)[1]
+    pv.change(pid, {"op": "add", "text": "General."})
+    check("a change from an old version is refused", "changed" in (raises(lambda: pv.change(pid, {"op": "add", "text": "y"},
+                                                                                          version=old_v)) or ""))
+    r = cli("reply", pid, "1", "-", stdin="Because $x$.")
+    r2 = cli("add", str(pv.PLATES / pid / "plate.html"), "-", "--cell", "runs.csv", "AdamW", "acc", stdin="Cell note.")
+    js = json.loads(cli("comments", pid, "--json").stdout or "[]")
+    check("plateview reply and plateview add write as Claude (by id, or by the path of the plate)",
+          r.returncode == 0 and r2.returncode == 0 and js[0]["status"] == "answered" and js[0]["msgs"][1]["text"] == "Because $x$."
+          and js[2]["anchor"] == {"table": "runs.csv", "row": "AdamW", "col": "acc"} and js[2]["msgs"][0]["author"] == "claude", js)
+    r = cli("comments", pid)
+    check("plateview comments prints the threads", '#1  "Second"  [answered]' in r.stdout and "#2  general  [open]" in r.stdout
+          and "cell runs.csv [AdamW, acc]" in r.stdout, r.stdout)
+    r = cli("show", pid)
+    check("plateview show prints the HTML file and the folders", f"html: {pv.PLATES / pid / 'plate.html'}" in r.stdout
+          and f"allow: {data.resolve()}" in r.stdout, r.stdout)
+    check("an edit and a delete of a message", pv.change(pid, {"op": "edit", "thread": 2, "msg": 0, "text": "Edited."})[0] == 2
+          and pv.change(pid, {"op": "delete", "thread": 2, "msg": 0})[0] == 2 and len(pv.read_comments(pid)[0]["threads"]) == 2)
+
+    # ---- the copy of a plate for the preview of a note (improvekit): its folders and its comments go with it
+    snap = pv.note_snapshot(pid)
+    info = json.loads(Path(str(snap) + ".plate.json").read_text())
+    check("a note keeps a copy of the plate, its folders and its comments", snap.is_file() and info["allow"] == [str(data.resolve())]
+          and len(info["threads"]) == 2)
+    penv = dict(env, VIEWKIT_PREVIEW="plateview:5", PLATEVIEW_PORT="8818")
+    penv.pop("PLATEVIEW_STATE")
+    penv["HOME"] = str(tmp / "home")  # the preview state folder is ~/.cache/plateview/preview/plateview-5
+    r = subprocess.run([sys.executable, PLATEVIEW, "new", str(snap), str(data / "demo.html"), "--no-open"],
+                       capture_output=True, text=True, env=penv)
+    ids = [x.split()[2] for x in r.stdout.splitlines() if x.startswith("plateview: plate ")]
+    pstate = tmp / "home" / ".cache" / "plateview" / "preview" / "plateview-5" / "plates"
+    pm = json.loads((pstate / ids[0] / "meta.json").read_text()) if len(ids) == 2 else {}
+    check("a preview server keeps its plates in its own folder, and new takes more than one file",
+          len(ids) == 2 and all((pstate / i / "plate.html").is_file() for i in ids), r.stderr)
+    check("a preview plate from the copy may read the folders of the plate, and has its comments",
+          pm.get("allow") == [str(data.resolve())] and pm.get("base") == str(data.resolve())
+          and len(json.loads((pstate / ids[0] / "comments.json").read_text())["threads"]) == 2, pm)
+    subprocess.run([sys.executable, PLATEVIEW, "--stop"], capture_output=True, env=penv)
+    r = cli("new", str(snap), "--no-open")
+    nid = r.stdout.split()[2] if r.returncode == 0 else ""
+    check("outside a preview, the copy of a plate gets no folders of its own", nid and pv.read_meta(nid)["allow"] ==
+          [str(snap.parent.resolve())] and not (pv.PLATES / nid / "comments.json").exists(), r.stderr)
     out = tmp / "out.html"
     r = cli("export", pid, str(out))
     check("plateview export writes one file", r.returncode == 0 and out.is_file() and "window.__PV_BUNDLE" in out.read_text(), r.stderr)

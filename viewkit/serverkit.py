@@ -22,9 +22,12 @@ KIT_DIR = Path(__file__).resolve().parent
 
 
 KIT_ASSETS = {"kit.js": "text/javascript; charset=utf-8", "kit.css": "text/css; charset=utf-8",
-              "components.js": "text/javascript; charset=utf-8", "components.css": "text/css; charset=utf-8"}  # the files of web/ that a page may load
-# web/vendor/: libraries that the apps share (MathJax). A page may load these types from it.
-VENDOR_TYPES = {".js": "text/javascript; charset=utf-8", ".woff": "font/woff", ".woff2": "font/woff2"}
+              "components.js": "text/javascript; charset=utf-8", "components.css": "text/css; charset=utf-8",
+              "pdfpages.js": "text/javascript; charset=utf-8", "pdfpages.css": "text/css; charset=utf-8"}  # the files of web/ that a page may load
+# web/vendor/: libraries that the apps share (MathJax, PDF.js with its cmaps and fonts). A page may load these types from it.
+VENDOR_TYPES = {".js": "text/javascript; charset=utf-8", ".woff": "font/woff", ".woff2": "font/woff2",
+                ".mjs": "text/javascript; charset=utf-8", ".bcmap": "application/octet-stream",
+                ".pfb": "application/octet-stream", ".ttf": "font/ttf"}
 
 
 def kit_asset(name):

@@ -28,7 +28,9 @@ bindir.mkdir()
 md = tmp / "notes.md"
 ORIGINAL = "# Notes\n\nThe first paragraph says something about lemmas.\n\nThe second paragraph is short.\n"
 md.write_text(ORIGINAL)
-env = dict(os.environ, PATH=f"{bindir}:{os.environ['PATH']}", MDVIEW_PORT=PORT, MDVIEW_CLAUDE=str(bindir / "claude"))
+ACCOUNT_FILE, ACCOUNT_LOG = tmp / "account", tmp / "account.log"
+env = dict(os.environ, PATH=f"{bindir}:{os.environ['PATH']}", MDVIEW_PORT=PORT, MDVIEW_CLAUDE=str(bindir / "claude"),
+           VIEWKIT_ACCOUNT_FILE=str(ACCOUNT_FILE), FAKE_CLAUDE_ACCOUNT_LOG=str(ACCOUNT_LOG))
 url = subprocess.run(["python3", MDVIEW, str(md), "--no-open"], env=env, capture_output=True, text=True, check=True).stdout.strip()
 chat_state = Path.home() / ".cache" / "mdview" / "chat" / (hashlib.sha1(str(md.resolve()).encode("utf-8")).hexdigest()[:16] + ".json")
 failures = []
@@ -146,6 +148,43 @@ try:
         pg.locator("#chatBox .kitGrip.w").dblclick()
         b3 = pg.locator("#chatBox").bounding_box()
         check("a double-click on an edge gives the default size back", abs(b3["width"] - b0["width"]) < 2 and abs(b3["height"] - b0["height"]) < 2, (b0, b3))
+
+        # The account selector (viewkit/claudekit.py): only when there is more than one Claude Code account
+        sys.path.insert(0, str(HERE.parent.parent / "viewkit"))
+        os.environ["VIEWKIT_ACCOUNT_FILE"] = str(ACCOUNT_FILE)
+        import claudekit
+        names = list(claudekit.accounts())
+        if len(names) < 2:
+            check("one account: no selector", pg.locator("#chatBox .kitAcct").count() == 0 or not pg.locator("#chatBox .kitAcct").is_visible())
+        else:
+            sel = pg.locator("#chatBox .kitAcct")
+            check("the account selector is before New", sel.is_visible() and pg.evaluate("() => document.querySelector('.kitAcct').nextElementSibling.id") == "chatNew")
+            check("the selector lists the accounts", sel.locator("option").all_inner_texts() == names, sel.locator("option").all_inner_texts())
+            other = names[1]
+            sel.select_option(other)
+            pg.wait_for_timeout(500)
+            check("a choice goes into the account file, for this document", claudekit.account(md.resolve())[0] == other, ACCOUNT_FILE.read_text() if ACCOUNT_FILE.exists() else "")
+            ACCOUNT_LOG.unlink(missing_ok=True)
+            send(pg, "which account?")
+            pg.wait_for_function("() => document.querySelector('#chatSend').textContent === 'Send'", timeout=15000)
+            pg.wait_for_timeout(300)
+            seen = ACCOUNT_LOG.read_text().split() if ACCOUNT_LOG.exists() else []
+            check("the next run uses the chosen account", seen[-1:] == [str(claudekit.accounts()[other])], seen)
+            sel.select_option("claude")
+            pg.wait_for_timeout(500)
+            send(pg, "and now?")
+            pg.wait_for_function("() => document.querySelector('#chatSend').textContent === 'Send'", timeout=15000)
+            pg.wait_for_timeout(300)
+            seen = ACCOUNT_LOG.read_text().split() if ACCOUNT_LOG.exists() else []
+            check("~/.claude runs without CLAUDE_CONFIG_DIR", seen[-1:] == ["-"], seen)
+            # a choice in another document changes the default, not the account of this document
+            claudekit.account_api("POST", {"account": other}, str(tmp / "other.md"))
+            check("a new document gets the last choice", claudekit.account(tmp / "new.md")[0] == other)
+            send(pg, "still mine?")
+            pg.wait_for_function("() => document.querySelector('#chatSend').textContent === 'Send'", timeout=15000)
+            pg.wait_for_timeout(300)
+            seen = ACCOUNT_LOG.read_text().split() if ACCOUNT_LOG.exists() else []
+            check("each document keeps its own account", seen[-1:] == ["-"], seen)
 
         # New chat
         pg.once("dialog", lambda d: d.accept())

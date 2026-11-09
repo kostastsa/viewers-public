@@ -5,7 +5,7 @@ description: Answer the open comments on a page or a data file that the user rea
 
 # Answer the comments on a page in pageview
 
-The user reads rich pages in **pageview**, a local viewer started with the `pageview` command (installed at `~/tools/pageview`). A page is a Markdown file with extra blocks, and its tables and charts read CSV or JSON files next to it. pageview can also open a data file alone. The comments are in the file `.pageview/NAME.json` next to the document. Your job is to answer each open comment with a reply in its thread. The viewer follows the comments file and shows your replies at once.
+The user reads rich pages in **pageview**, a local viewer started with the `pageview` command (installed at `~/tools/viewers/pageview`). A page is a Markdown file with extra blocks, and its tables and charts read CSV or JSON files next to it. pageview can also open a data file alone. The comments are in the file `.pageview/NAME.json` next to the document. Your job is to answer each open comment with a reply in its thread. The viewer follows the comments file and shows your replies at once.
 
 ## The comments
 
@@ -26,7 +26,7 @@ pageview add FILE - --cell TABLE ROW COL <<'EOF'  a new comment on a table cell
 
 - **Always give the text on stdin**, with the quoted heredoc `<<'EOF'`. The quotes around EOF stop the shell from a change to `$`, backquotes and quotes, so maths such as `$x^2$` stays correct.
 - Do not edit the comments file, and do not read it directly. Use the commands.
-- Read the page and the data files with the Read tool. `~/tools/pageview/SYNTAX.md` explains the blocks.
+- Read the page and the data files with the Read tool. `~/tools/viewers/pageview/SYNTAX.md` explains the blocks.
 
 ## Steps
 

@@ -762,7 +762,7 @@ class Chat:
             allowed, disallowed, perm = CLAUDE_TOOLS, None, "acceptEdits"
         cmd = claudekit.build_command(exe, mode + ctx + text, CHAT_SYSTEM.replace("<FILE>", str(p)), sid, started,
                                       allowed, disallowed, perm)
-        err, stderr, code = claudekit.run_stream(cmd, p.parent, claudekit.clean_env(), self.event, self.set_proc)
+        err, stderr, code = claudekit.run_stream(cmd, p.parent, claudekit.clean_env(doc=p), self.event, self.set_proc)
         try:
             after, version = read_text(p)
         except OSError:
@@ -1026,6 +1026,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(err[0], {"error": err[1]})
             return self.send_json(200, {"version": read_text(p)[1]})
 
+        if url.path == "/api/account":  # the Claude Code account of the chat and the Oracle (claudekit)
+            p, rel, err = self.md_path(q)
+            if err:
+                return self.send_json(err[0], {"error": err[1]})
+            return self.send_json(*claudekit.account_api("GET", doc=p))
+
         if url.path == "/api/chat":
             p, rel, err = self.md_path(q)
             if err:
@@ -1086,7 +1092,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.deny(True)
         path = urlparse(self.path).path
         if path not in ("/api/op", "/api/grant", "/api/claude", "/api/chat", "/api/art/vote", "/api/improve/dash",
-                        "/api/improve/preview"):
+                        "/api/account", "/api/improve/preview"):
             return self.send_json(404, {"error": "Not found"})
         try:
             op = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
@@ -1124,6 +1130,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/improve/preview":  # the decision in the preview tab: accept, change or reject
             return self.send_json(*improvekit.preview_api("POST", op))
 
+        if path == "/api/account":  # the Claude Code account of the chat and the Oracle (claudekit)
+            return self.send_json(*claudekit.account_api("POST", op, p))
         if path == "/api/chat":  # the chat panel: send a message, stop the answer, or start a new conversation
             chat = chat_of(p)
             action = op.get("action", "send")

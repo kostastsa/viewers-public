@@ -8,7 +8,7 @@
     improverun.py reject APP LIVE N [REASON]  close the issue, remove the proposal
     improverun.py retest APP LIVE N           Try again after failed tests: the tests and the next steps, no Claude
 
-A proposal has two worktrees in ~/tools/wt/note-APP-N: APP (branch improve/note-N) and viewkit (branch
+A proposal has two worktrees in ~/tools/viewers/wt/note-APP-N: APP (branch improve/note-N) and viewkit (branch
 improve/APP-note-N). Claude may edit both. When viewkit changes, the run also tests the other apps (viewkit/improve.json,
 "apps") in worktrees next to the viewkit worktree, so they use the kit of the proposal. Accept merges viewkit first.
 In the repository viewers (all the apps and viewkit in one repository, improvekit.mono_root), a proposal has one
@@ -104,8 +104,9 @@ def claude_exe(m):
     raise Fail("Cannot find the claude command. Set VIEWKIT_CLAUDE to its path.")
 
 
-def run_claude(m, prompt, cwd, tools, disallowed=(), add_dirs=()):
-    """One `claude -p` run. Returns its last text (the result)."""
+def run_claude(m, prompt, cwd, tools, disallowed=(), add_dirs=(), doc=None):
+    """One `claude -p` run. Returns its last text (the result). It uses the Claude Code account of `doc`, the document of
+    the note (claudekit.account)."""
     cmd = [claude_exe(m), "-p", prompt, "--output-format", "stream-json", "--verbose", "--permission-mode", "acceptEdits"]
     for d in add_dirs:
         cmd += ["--add-dir", str(d)]
@@ -122,7 +123,7 @@ def run_claude(m, prompt, cwd, tools, disallowed=(), add_dirs=()):
                 if b.get("type") == "tool_use":
                     log("claude:", b.get("name"), claudekit.tool_summary(b))
     log("claude -p", prompt)
-    env = claudekit.clean_env()
+    env = claudekit.clean_env(doc=doc)
     if TRACKER == "local":  # `gh` is the local tracker for Claude
         env["PATH"] = f"{KIT / 'bin'}{os.pathsep}{env.get('PATH', '')}"
         env["VIEWKIT_NOTES_REPO"] = REPO or ""
@@ -244,6 +245,26 @@ def add_worktree(repo, path, branch=None):
     link_ignored(repo, path)
 
 
+def note_doc(app, n):
+    """The document of note n (the account of its runs), or None."""
+    return (ik.read_status(app, n) or {}).get("doc") or None
+
+
+def catch_up(d):
+    """Rebase the proposal in worktree d on main if main moved, so the proposal (and its sandbox) has the newest code,
+    for example a change of the kit. On a conflict, or with changes that are not committed, it keeps the old base."""
+    if git(d, "merge-base", "--is-ancestor", "main", "HEAD", check=False).returncode == 0:
+        return
+    if git(d, "status", "--porcelain", check=False).stdout.strip():
+        log("catch up: changes that are not committed in", d)
+        return
+    if git(d, "rebase", "-q", "main", check=False).returncode != 0:
+        git(d, "rebase", "--abort", check=False)
+        log("catch up: the proposal does not rebase on main; it keeps its base:", d)
+    else:
+        log("catch up: rebased on main:", d)
+
+
 def make_worktree(app, live, n):
     w, wt = ik.worktree_of(app, live, n)
     kwt = ik.kit_worktree_of(app, live, n)
@@ -252,13 +273,19 @@ def make_worktree(app, live, n):
     if mono:  # one worktree of the whole repository: the app and viewkit are folders of it
         if not wt.parent.exists():
             add_worktree(mono, wt.parent, f"improve/note-{n}")
+        else:
+            catch_up(wt.parent)
         return w, wt, kwt
     if not wt.exists():
         add_worktree(live, wt, f"improve/note-{n}")
+    else:
+        catch_up(wt)
     if kwt.is_symlink():  # a proposal of version 1 had a link to the live kit
         kwt.unlink()
     if not kwt.exists():
         add_worktree(KIT, kwt, kit_branch(app, n))
+    elif not kwt.is_symlink():
+        catch_up(kwt)
     return w, wt, kwt
 
 
@@ -358,7 +385,7 @@ def implement(app, live, n):
         w, wt, kwt = make_worktree(app, live, n)
         bases = (git(wt, "rev-parse", "HEAD"), git(kwt, "rev-parse", "HEAD"))
         tools, deny = code_tools(wt, kwt)
-        text = run_claude(m, f"/improve implement {app} {n}", wt, tools, deny, [w])
+        text = run_claude(m, f"/improve implement {app} {n}", wt, tools, deny, [w], note_doc(app, n))
         after_claude(app, live, n, m, w, wt, kwt, bases, text, change=False)
 
 
@@ -392,7 +419,7 @@ def change(app, live, n, feedback):
         w, wt, kwt = make_worktree(app, live, n)
         bases = (git(wt, "rev-parse", "HEAD"), git(kwt, "rev-parse", "HEAD"))
         tools, deny = code_tools(wt, kwt)
-        text = run_claude(m, f"/improve change {app} {n}", wt, tools, deny, [w])
+        text = run_claude(m, f"/improve change {app} {n}", wt, tools, deny, [w], note_doc(app, n))
         after_claude(app, live, n, m, w, wt, kwt, bases, text, change=True)
 
 
@@ -511,7 +538,7 @@ def learn(app, live, n, decision):
     tools = ["Read", "Grep", "Glob", "Bash(gh issue view:*)"] + [f"{t}(/{f})" for f in files for t in ("Edit", "Write")]
     try:
         run_claude(m, f"/improve learn {app} {n} {ik.notes_repo(live)} {decision}", KIT, tools, ["Bash(git:*)", "WebFetch"],
-                   [live])
+                   [live], note_doc(app, n))
     except Fail as e:
         log("learn:", e)
         return

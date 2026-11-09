@@ -6,7 +6,7 @@ description: Answer the review comments left in a Markdown file as CriticMarkup 
 # Answer comments in a Markdown file
 
 The user reads and comments on Markdown files in **mdview**, a local viewer run with the `mdview`
-command (installed at `~/tools/mdview`). The `.md` file is the master
+command (installed at `~/tools/viewers/mdview`). The `.md` file is the master
 copy, and the comments are stored inside it as CriticMarkup. Your job is to act on each open comment
 by **proposing changes as suggestions**, which the user accepts or rejects in the viewer, then
 reply in the thread so the user can see what you did. The viewer refreshes automatically when the
