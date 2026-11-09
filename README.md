@@ -60,7 +60,7 @@ The command opens the browser. In the page, select text to comment on it. To get
 | `/plate` | Make a plate from your data files |
 | `/improve APP` | Work on the notes to a viewer (see Improve the viewers) |
 
-The README of each viewer gives the details.
+The README of each viewer gives the details. [`HOTKEYS.md`](HOTKEYS.md) lists the keys of each viewer and the shared keys.
 
 ## Improve the viewers
 
