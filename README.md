@@ -23,6 +23,8 @@ git clone https://github.com/kostastsa/viewers-public ~/tools/viewers
 ~/tools/viewers/install.sh
 ```
 
+You can also tell Claude Code to do the installation: `Install the viewers. Follow https://github.com/kostastsa/viewers-public/blob/main/ONBOARDING.md`. [`ONBOARDING.md`](ONBOARDING.md) gives the steps for the agent, with the checks at the end.
+
 The script does these steps:
 
 1. It links `~/tools/APP` to each folder, because the skills use these paths.
