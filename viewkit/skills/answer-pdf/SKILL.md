@@ -6,7 +6,7 @@ description: Answer the open comments on a PDF that the user reads in pdfview, w
 # Answer the comments on a PDF in pdfview
 
 The user reads PDF files in **pdfview**, a local viewer started with the `pdfview` command (installed at
-`~/tools/pdfview`). pdfview never changes the PDF. The comments are in the file `.pdfview/NAME.pdf.json` next to
+`~/tools/viewers/pdfview`). pdfview never changes the PDF. The comments are in the file `.pdfview/NAME.pdf.json` next to
 the PDF. Your job is to answer each open comment with a reply in its thread. The viewer follows the comments file
 and shows your replies at once.
 

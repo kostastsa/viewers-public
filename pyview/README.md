@@ -20,7 +20,7 @@ matplotlib figures) are not in the file. They are saved next to it, in `.pyview/
 | `vendor/mathjax/` | A local copy of MathJax, copied from mdview. It loads only when a markdown cell has maths. |
 | `.venv/` | The shared interpreter that all sessions use (see Interpreter). Not in git. |
 | `tests/` | `test_ops.py` (no server), `browser_test.py` (Playwright), `demo.py`. |
-| `../viewkit/` | The code that pyview and mdview share (server life cycle, the Claude chat run, the chat panel with its pulse and hotkey, the stand-in `claude` for the tests). It must be in the folder next to `pyview`, as `~/tools/viewkit`. On a computer that runs `pyview --remote`, clone it there too. |
+| `../viewkit/` | The code that pyview and mdview share (server life cycle, the Claude chat run, the chat panel with its pulse and hotkey, the stand-in `claude` for the tests). It must be in the folder next to `pyview`, as `~/tools/viewers/viewkit`. On a computer that runs `pyview --remote`, clone it there too. |
 | `~/.local/bin/pyview` | Link to `pyview.py`, so `pyview` works from any folder. |
 | `../viewkit/skills/answer-cells/` | `/answer-cells`: Claude answers the comments in a file. `install.sh` of viewkit links it into `~/.claude/skills/`. |
 
@@ -31,12 +31,12 @@ Requires Python 3.9+ for the command. The shared interpreter needs `uv` (or `pyt
 Use `install.sh` (see the section Install in the README of `viewkit`). To install by hand, put `pyview` and `viewkit` next to each other in `~/tools`. `pyview` stops with a message if `viewkit` is not there.
 
 ```
-ln -s ~/tools/pyview/pyview.py ~/.local/bin/pyview
-pyview --setup      # builds ~/tools/pyview/.venv with numpy, pandas, matplotlib, scipy, seaborn, sympy, scikit-learn
+ln -s ~/tools/viewers/pyview/pyview.py ~/.local/bin/pyview
+pyview --setup      # builds ~/tools/viewers/pyview/.venv with numpy, pandas, matplotlib, scipy, seaborn, sympy, scikit-learn
 ```
 
 To add a package to the shared interpreter:
-`uv pip install --python ~/tools/pyview/.venv/bin/python PACKAGE`.
+`uv pip install --python ~/tools/viewers/pyview/.venv/bin/python PACKAGE`.
 
 ## Open `.py` files by double-clicking in Finder
 
@@ -44,7 +44,7 @@ To add a package to the shared interpreter:
 app/build.sh     # builds ~/Applications/pyview.app (run again to rebuild)
 ```
 
-Then select a `.py` file in Finder, choose Get Info > Open with > pyview > Change All…
+To make pyview the default app of `.py` files, run `app/build.sh --default` (it needs `duti`: `brew install duti`). Or select a `.py` file in Finder, choose Get Info > Open with > pyview > Change All…
 
 - The app has no window and no Dock icon. Its Finder icon is the tab icon of pyview.
 - It gives the files to `~/.local/bin/pyview`, so that link must exist. If you open the app with no file, it opens your home folder.
@@ -160,7 +160,7 @@ The runner uses the first of these that exists:
 1. `PYVIEW_PYTHON`, an environment variable.
 2. `--python PATH` on `pyview run`, or a `# pyview: python=PATH` line in the file.
 3. The nearest `.venv/` in the folder of the file or a parent folder.
-4. The shared `~/tools/pyview/.venv` (made by `pyview --setup`).
+4. The shared `~/tools/viewers/pyview/.venv` (made by `pyview --setup`).
 
 If none exists, `pyview` stops with a message. It never falls back to `python3` without telling you.
 A runner starts on the first run. It stops on Restart, when the server stops, or after 4 hours

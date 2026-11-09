@@ -19,7 +19,7 @@ pageview never changes the page or its data. The comments are in a JSON file nex
 | `examples/` | An example page (`optimizers/optimizers.md`) and a data file with settings (`vision_grid.csv`, `vision_grid.view.json`). The numbers are invented. `make_data.py` makes them again. |
 | `tests/` | `test_ops.py` (no server) and `browser_test.py` (Playwright). |
 | `app/build.sh` | Builds `~/Applications/pageview.app`, to open files from Finder (Open With). |
-| `../viewkit/` | The code that the viewers share: the blocks (`web/components.js`, `web/components.css`: tables, grids, charts, figures, tabs, toggles, columns, callouts, stat cards, code, widgets), the data reader (`datakit.py`), the server life cycle and the chat. It must be next to `pageview`, as `~/tools/viewkit`. |
+| `../viewkit/` | The code that the viewers share: the blocks (`web/components.js`, `web/components.css`: tables, grids, charts, figures, tabs, toggles, columns, callouts, stat cards, code, widgets), the data reader (`datakit.py`), the server life cycle and the chat. It must be next to `pageview`, as `~/tools/viewers/viewkit`. |
 | `~/.local/bin/pageview` | A link to `pageview.py`, so `pageview` works from any folder. The chat and the Oracle need it. |
 | `../viewkit/skills/page/` | `/page`: the skill that tells Claude how to write a page. `install.sh` of viewkit links it into `~/.claude/skills/`. |
 | `../viewkit/skills/answer-page/` | `/answer-page`: the skill of the Oracle. Claude answers the open comments of a page. `install.sh` of viewkit links it into `~/.claude/skills/`. |
@@ -31,7 +31,7 @@ Requires Python 3.9 or newer, pandoc 3 (`brew install pandoc`), and the folder `
 Use `install.sh` (see the section Install in the README of `viewkit`). To install by hand, put `pageview` and `viewkit` next to each other in `~/tools`, and link the command:
 
 ```
-ln -s ~/tools/pageview/pageview.py ~/.local/bin/pageview
+ln -s ~/tools/viewers/pageview/pageview.py ~/.local/bin/pageview
 ```
 
 ## Open files from Finder
@@ -43,7 +43,7 @@ app/build.sh     # builds ~/Applications/pageview.app (run again to rebuild)
 Then right click a `.md`, `.markdown`, `.csv`, `.tsv` or `.json` file in Finder, and choose **Open With > pageview**.
 
 - pageview does not become the default app of these files. `.md` files still open in mdview by a double click.
-- To make pageview the default for a type, select a file and choose Get Info > Open with > pageview > Change All…
+- To make pageview the default for its types, run `app/build.sh --default` (it needs `duti`). Or select a file and choose Get Info > Open with > pageview > Change All…
 - The app has no window and no Dock icon. It gives the files to `~/.local/bin/pageview`, so that link must exist.
 - The builder is shared: `../viewkit/app/build.sh`. Set `PAGEVIEW_KIT` to use another copy of the kit.
 
@@ -69,7 +69,7 @@ One shared server runs in the background at `http://127.0.0.1:8768` (set `PAGEVI
 
 ### In the viewer
 
-- **Blocks:** `SYNTAX.md` tells how to write each block. Open it with `pageview ~/tools/pageview/SYNTAX.md`.
+- **Blocks:** `SYNTAX.md` tells how to write each block. Open it with `pageview ~/tools/viewers/pageview/SYNTAX.md`.
 - **Source:** move the pointer on a block. Click **Source** to see its lines in the file. **Source** in the header shows the button on all blocks.
 - **Tables:** click a column name to sort. Type in **Filter rows** to show only the rows that match. **Columns** hides columns. **⤢ Wide** uses the full width of the page. **⛶** opens the table in the full window (Esc closes it). **LaTeX**, **MD** and **CSV** copy the table as you see it.
 - **Grids** (`rows` and `columns`): **Best per** (column or row), **Color** (heat or rank), **± sd**, **Compact** and **⇄ Transpose**.

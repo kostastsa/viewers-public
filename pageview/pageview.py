@@ -453,7 +453,7 @@ CHAT_SYSTEM = """You are in the chat panel of pageview, a viewer for rich pages 
 The document is the file <FILE>.
 The user sees your reply in a narrow panel, so keep it short and plain. Maths in $...$ and $$...$$ is typeset there.
 - A page is Markdown with extra blocks (tables and charts from CSV or JSON files, figures, tabs, toggles, columns, \
-callouts, stat cards, widgets). The syntax is in ~/tools/pageview/SYNTAX.md. Read it before you change a page.
+callouts, stat cards, widgets). The syntax is in ~/tools/viewers/pageview/SYNTAX.md. Read it before you change a page.
 - The comments of the user are not in the page. `pageview list <FILE>` prints them. Answer a comment with
   `pageview reply <FILE> ID - <<'EOF'` and the text on the next lines, then EOF (the quoted EOF keeps $ and quotes as \
 they are). Add a comment with `pageview add <FILE> - --quote 'exact words of the page' <<'EOF'` in the same way, or \
@@ -579,7 +579,7 @@ class Chat:
             allowed, denied, perm = CHAT_TOOLS, ["NotebookEdit"], "acceptEdits"
         cmd = claudekit.build_command(exe, mode + ctx + ("\n" if ctx else "") + text,
                                       CHAT_SYSTEM.replace("<FILE>", str(p)), sid, started, allowed, denied, perm)
-        err, stderr, code = claudekit.run_stream(cmd, p.parent, claudekit.clean_env(), self.event, self.set_proc)
+        err, stderr, code = claudekit.run_stream(cmd, p.parent, claudekit.clean_env(doc=p), self.event, self.set_proc)
         after = comments_text(p)
         changed = after != before
         if changed and Handler.app is not None:  # one Undo takes back the comments that this turn changed
@@ -861,7 +861,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, a[0], a[1]) if a else self.send(404, "Not found")
 
         if url.path in ("/api/doc", "/api/version", "/api/chat", "/api/claude", "/api/data", "/file", "/go",
-                        "/widget"):
+                        "/api/account", "/widget"):
             p, rel, err = self.doc_path(q)
             if err:
                 return self.send_json(err[0], {"error": err[1]})
@@ -908,6 +908,8 @@ class Handler(BaseHTTPRequestHandler):
                 st = ORACLE.status(p)
                 app.oracle_seen(p, st)
                 return self.send_json(200, st)
+            if url.path == "/api/account":  # the Claude Code account of the chat and the Oracle (claudekit)
+                return self.send_json(*claudekit.account_api("GET", doc=p))
             if url.path == "/api/chat":
                 since = (q.get("since") or [""])[0]
                 return self.send_json(200, chat_of(p).snapshot(int(since) if since.isdigit() else None))
@@ -947,7 +949,7 @@ class Handler(BaseHTTPRequestHandler):
         if not self.authorized():
             return self.deny(True)
         path = urlparse(self.path).path
-        if path not in ("/api/op", "/api/grant", "/api/chat", "/api/claude"):
+        if path not in ("/api/op", "/api/grant", "/api/chat", "/api/account", "/api/claude"):
             return self.send_json(404, {"error": "Not found"})
         try:
             op = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
@@ -972,6 +974,8 @@ class Handler(BaseHTTPRequestHandler):
         if err:
             return self.send_json(err[0], {"error": err[1]})
 
+        if path == "/api/account":  # the Claude Code account of the chat and the Oracle (claudekit)
+            return self.send_json(*claudekit.account_api("POST", op, p))
         if path == "/api/chat":  # the chat panel: send a message, stop the answer, or start a new conversation
             chat = chat_of(p)
             action = op.get("action", "send")

@@ -6,6 +6,7 @@
 <title>pdfview</title>
 <link rel="icon" type="image/png" href="/kit/icons/pdf.png">
 <link rel="stylesheet" href="/kit/kit.css">
+<link rel="stylesheet" href="/kit/pdfpages.css">
 <style>
 :root{color-scheme:dark;--bg:#111214;--fg:#d6d9de;--muted:#80858d;--panel:#16181b;--border:#2a2d32;--accent:#8a9bd6;
   --warn:#e0876a;--code:#1b1d21;--hl:#2b3350;--mark:rgba(255,200,60,.28);--mark-active:rgba(255,170,30,.55);--hl-mark:rgba(90,200,110,.28);--hl-line:rgba(60,170,90,.85);
@@ -58,16 +59,7 @@ nav li a:hover{background:var(--hl)}
 nav li a.cur{color:var(--accent)}
 nav .empty{color:var(--muted);padding:4px 6px}
 
-/* ----- pages ----- */
-#pages{overflow:auto;background:var(--desk);position:relative;padding:16px 0 80px;outline:none}
-.page{position:relative;margin:0 auto 14px;background:#fff;box-shadow:0 1px 6px rgba(0,0,0,.4)}
-.page canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
-.page .imgs{display:none}
-body.darkpages .page{background:#1f1f1f}
-body.darkpages .page canvas.base{filter:invert(.88) hue-rotate(180deg)}
-body.darkpages .page canvas.imgs{display:block}
-.page .num{position:absolute;right:-34px;top:2px;color:var(--muted);font-size:11px}
-.page .marks{position:absolute;inset:0;pointer-events:none;z-index:2;transform-origin:0 0}
+/* ----- pages: the page view is in the kit (pdfpages.css); here the marks of pdfview on the pages ----- */
 .page .marks div{position:absolute;background:var(--mark);mix-blend-mode:normal;pointer-events:auto;cursor:pointer;border-radius:2px}
 .page .marks div.active{background:var(--mark-active);outline:1px solid rgba(255,150,0,.8)}
 .page .marks div.flash{animation:flash 1.2s ease-out 2}
@@ -83,23 +75,8 @@ body.darkpages .page canvas.imgs{display:block}
 .page .marks div.box.active{border-color:rgba(255,120,0,1);box-shadow:0 0 0 3px rgba(255,150,0,.3);background:rgba(255,170,30,.12)}
 .page .marks div.box.draft{border:2px dashed var(--accent);background:rgba(120,160,255,.12)}
 .page .boxdraw{position:absolute;z-index:5;border:2px dashed var(--accent);background:rgba(120,160,255,.15);pointer-events:none}
-/* the links in the PDF are blue in the page canvas (viewer.js: paintLinks); a link in the PDF under the pointer (viewer.js: linkAt) */
-.page.onlink,.page.onlink .textLayer,.page.onlink .textLayer :is(span,br){cursor:pointer}
 body.altdown .page,body.altdown .page .textLayer span{cursor:crosshair}
-.page .loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#999;font-size:12px}
-.err-page{padding:40px;color:var(--warn);font-size:14px;white-space:pre-wrap}
 
-/* PDF.js text layer (from pdf_viewer.css of pdfjs-dist 4.10.38, the parts that selection needs) */
-.textLayer{position:absolute;text-align:initial;inset:0;overflow:clip;opacity:1;line-height:1;-webkit-text-size-adjust:none;
-  text-size-adjust:none;forced-color-adjust:none;transform-origin:0 0;caret-color:CanvasText;z-index:1}
-.textLayer :is(span,br){color:transparent;position:absolute;white-space:pre;cursor:text;transform-origin:0% 0%}
-.textLayer > :not(.markedContent),.textLayer .markedContent span:not(.markedContent){z-index:1}
-.textLayer span.markedContent{top:0;height:0}
-.textLayer span[role="img"]{user-select:none;cursor:default}
-.textLayer ::selection{background:rgba(0,90,255,.3)}
-.textLayer br::selection{background:transparent}
-.textLayer .endOfContent{display:block;position:absolute;inset:100% 0 0;z-index:0;cursor:default;user-select:none}
-.textLayer.selecting .endOfContent{top:0}
 
 /* ----- the bar on a selection: Comment and Highlight; the menu of a highlight ----- */
 #selbar{position:fixed;z-index:30;display:none;gap:4px}
@@ -236,7 +213,7 @@ body.chatopen aside{padding-bottom:calc(var(--kit-chat-h,min(62vh,540px)) + 40px
 </header>
 <main>
   <nav id="nav"><h4>Contents</h4><div id="outline"><div class="empty">…</div></div></nav>
-  <div id="pages" tabindex="0"></div>
+  <div id="pages" class="kitPages" tabindex="0"></div>
   <aside id="side">
     <h4><span id="counts">Comments</span></h4>
     <div class="stools">
@@ -269,6 +246,7 @@ body.chatopen aside{padding-bottom:calc(var(--kit-chat-h,min(62vh,540px)) + 40px
 </dialog>
 <div id="toast"></div>
 <script src="/kit/kit.js"></script>
+<script src="/kit/pdfpages.js"></script>
 <script src="/viewer.js"></script>
 </body>
 </html>

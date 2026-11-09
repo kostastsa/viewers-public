@@ -4,33 +4,35 @@ Show **plates** in the browser. A plate is an HTML page that Claude writes, like
 
 **Install:** use `install.sh` (see the section Install in the README of `viewkit`). It installs all the viewers and their Claude Code skills, and builds the macOS apps.
 
-Plates are temporary. A plate stays while the Claude session that made it runs, or while a tab shows it. Then plateview deletes it. **Keep** makes a plate permanent, and **Export** saves one HTML file with the data inside.
+Plates are temporary. A plate stays while the Claude session that made it runs, or while a tab shows it. Then plateview deletes it. **Keep** makes a plate permanent, and **Export** saves one HTML file with the data inside. ⌘/Ctrl+P saves a PDF of the plate.
 
-plateview has no comments and no chat.
+You can comment on a plate, chat with Claude about it, and let the Oracle answer the comments. See [Comments, chat and the Oracle](#comments-chat-and-the-oracle).
 
 ## Files
 
 | File | Purpose |
 |---|---|
 | `plateview.py` | The `plateview` command and the local server. Standard library only. |
-| `shell.html`, `shell.js` | The frame around a plate: the bar (title, state, theme, Keep, Export, Delete) and the sandboxed frame. At `/`, the list of plates. |
-| `runtime.js` | The `pv` library inside a plate. |
+| `shell.html`, `shell.js` | The frame around a plate: the bar (title, state, theme, Keep, Export, Delete, Undo, Comments), the sandboxed frame, the comments sidebar, the chat panel, the Oracle, and the dashboard of the notes. At `/`, the list of plates. |
+| `runtime.js` | The `pv` library inside a plate, and the bridge of the comments: it tells the frame what you select, and paints the marks of the comments. |
+| `improve.json` | The settings of the self-improving loop (`viewkit/improvekit.py`): the tests, the sample plate, and the files that go with a copy of a plate. |
 | `plate.css` | The default stylesheet of a plate. |
 | `examples/demo/` | An example plate (`demo.html`) and its files. The numbers are invented. |
 | `tests/` | `test_ops.py` (no server) and `browser_test.py` (Playwright). |
 | `app/build.sh` | Builds `~/Applications/plateview.app`, so that Finder can open `.html` files with plateview (Open With). |
-| `../viewkit/` | The code that the viewers share: the server life cycle and the network address (`serverkit.py`), the data reader (`datakit.py`), the components (`web/components.js`, `web/components.css`), and the fonts (`web/vendor/fonts/`, IBM Plex). It must be next to `plateview`, as `~/tools/viewkit`. |
+| `../viewkit/` | The code that the viewers share. The server parts: the server life cycle and the network address (`serverkit.py`), the data reader (`datakit.py`), the chat run and the Oracle (`claudekit.py`), and the notes (`improvekit.py`). The page parts: the chat panel, the dashboard and the tab icon (`web/kit.js`, `web/kit.css`), the components (`web/components.js`, `web/components.css`), and the fonts (`web/vendor/fonts/`, IBM Plex). It must be next to `plateview`, as `~/tools/viewers/viewkit`. |
 | `~/.local/bin/plateview` | A link to `plateview.py`, so that `plateview` works from any folder. |
 | `../viewkit/skills/plate/` | `/plate`: the skill that tells Claude how to write a plate. `install.sh` of viewkit links it into `~/.claude/skills/`. |
+| `../viewkit/skills/answer-plate/` | `/answer-plate`: the skill of the Oracle. Claude answers the open comments of a plate. |
 
-Requires Python 3.9 or newer, and the folder `viewkit` next to `plateview`. A PDF figure needs `pdftoppm` (from poppler, `brew install poppler`). Without it, plateview uses `sips` of macOS.
+Requires Python 3.9 or newer, and the folder `viewkit` next to `plateview`. The chat and the Oracle need Claude Code (`claude`). A PDF figure needs `pdftoppm` (from poppler, `brew install poppler`). Without it, plateview uses `sips` of macOS.
 
 ## Installation
 
 Use `install.sh` (see the section Install in the README of `viewkit`). To install by hand, put `plateview` and `viewkit` next to each other in `~/tools`, and link the command:
 
 ```
-ln -s ~/tools/plateview/plateview.py ~/.local/bin/plateview
+ln -s ~/tools/viewers/plateview/plateview.py ~/.local/bin/plateview
 ```
 
 ## Use
@@ -45,6 +47,12 @@ plateview open ID                                     open a plate in the browse
 plateview keep ID                                     make a plate permanent
 plateview delete ID                                   delete a plate now
 plateview export ID [out.html]                        save one HTML file with the data inside
+plateview show ID                                     the HTML file, the base folder, the allowed folders, the files it reads
+plateview comments ID [--json]                        the comments of a plate
+plateview reply ID N - <<'EOF'                        a reply to comment N (as Claude); the text up to a line EOF
+plateview add ID - --quote 'WORDS' <<'EOF'            a new comment on the words of the plate (or --cell TABLE ROW COL)
+plateview note TEXT                                   a note to the app (see "Notes to the app")
+plateview try N [FILE]                                try the proposal of note N in a sandbox
 plateview                                             the list of plates in the browser
 plateview --status | --stop | --restart
 ```
@@ -52,8 +60,20 @@ plateview --status | --stop | --restart
 - **Allowed folders:** give `--allow` one time for each folder (or file) that the plate may read. Without `--allow`, the plate may read the folder of its HTML file (or the current folder, for stdin).
 - **Paths in a plate:** a full path, a path with `~`, or a path relative to the folder of the HTML file (`--base` sets another folder).
 - **Never:** a plate never reads a hidden file or folder, or a file outside its allowed folders.
+- **More files:** `plateview new a.html b.html` makes one plate for each file.
+- **ID:** the commands `show`, `comments`, `reply` and `add` also accept the folder of the plate or the path of its `plate.html`.
 
 One shared server runs in the background at `http://127.0.0.1:8769` (`PLATEVIEW_PORT`). It restarts itself when `plateview.py` or a `.py` file of `viewkit` changes. Its log is `~/.cache/plateview/server.log`. The plates are in `~/.cache/plateview/plates/`.
+
+### A PDF of a plate
+
+Push ⌘/Ctrl+P in the tab of a plate (also when the plate has the focus). The tooltip of **Export** tells this key.
+
+1. A new tab opens with the print view: the exported plate in the light theme, with its data and images inside.
+2. When the plate shows all its data, fonts and images, the print dialog opens.
+3. In the print dialog, select **Save as PDF**.
+
+The print view holds only the files that the plate loaded, as Export does. A panel, a stat card or a figure stays on one page if it can.
 
 ### Your other devices (Tailscale)
 
@@ -64,6 +84,27 @@ PLATEVIEW_BIND=tailscale PLATEVIEW_NAMES=my-mac plateview --restart
 - The server then listens on the Tailscale address of this Mac. Put the two variables in `~/.zprofile` to keep them.
 - The links that `plateview` prints use the first name in `PLATEVIEW_NAMES`. Open such a link on the other device. It holds the access key.
 - plateview refuses `PLATEVIEW_BIND=0.0.0.0`, because then every computer on the network could reach it.
+
+## Comments, chat and the Oracle
+
+The bar has **Comments** (⌘/Ctrl+\\), which shows the sidebar, and **Undo**, which takes back the last change to the comments.
+
+- **Comment on words:** select words in the plate. Click **💬 Comment** (or push ⌘/Ctrl+Shift+M). A comment box opens under the words. ⌘/Ctrl+Enter saves. The plate marks the words in yellow.
+- **Comment on a cell:** click a cell of a table or a grid, then **💬 Comment on cell**. The plate marks the cell with a small corner. The comment names the data file of the table, the row and the column.
+- **Comment on the whole plate:** **+ Comment** in the sidebar.
+- **In the sidebar:** a click on a comment shows its words or its cell in the plate. A click on marked words in the plate selects their comment. **Reply**, **Edit**, **Delete** and **Resolve** work as in the other viewers. **Resolve all** removes all the comments. If the words of a comment are not in the plate now, the comment shows **not found**.
+- **Where they are:** in `~/.cache/plateview/plates/ID/comments.json`. They go when the plate goes. **Keep** keeps them too.
+- **Chat:** the button at the bottom right (⌘/Ctrl+S, also when the plate has the focus). Claude runs in the base folder of the plate, so it reads the `CLAUDE.md` of your project. It can read the plate and its data files, change the HTML of the plate, and answer or add comments when you ask. The open tab shows a change at once. The selected words or cell go with your question. **Ask only** stops all changes. One Claude session for each plate. **New** starts a new conversation. The conversation is in the folder of the plate.
+- **Oracle:** the button at the top of the sidebar. It starts Claude Code in the background (`claude -p "/answer-plate ID"`). Claude replies in each open thread. The run cannot edit files. One session for each plate: later runs continue it, and **New session** forgets it. One **Undo** takes back all the replies of a run.
+- **The bridge:** the plate runs in a sandbox, so the frame cannot see into it. `runtime.js` tells the frame what you select, and paints the marks that the frame sends. The plate never changes the comments: only the buttons of the frame do. An exported plate has no comments.
+
+## Notes to the app
+
+⌘/Ctrl+Shift+. opens the dashboard of the notes (`viewkit/improvekit.py`), as in the other viewers. Write what is wrong with plateview, or what you want it to do. **Send all** sends the notes to the self-improving loop. Claude makes a proposal on a branch. Then a preview tab opens with **Accept**, **Change** and **Reject**.
+
+- A note from a plate keeps a copy of the plate, its folders and its comments in `~/.cache/plateview/notes/ID/`. The preview shows this copy with your data, and the sample plate `examples/demo/demo.html`. The data files do not change: a plate only reads them.
+- A preview server keeps its plates in `~/.cache/plateview/preview/plateview-N/`, so it never shows or deletes your plates.
+- `plateview note TEXT` sends a note from the command line. `plateview try N` opens the proposal of note N in a sandbox on port 8900+N.
 
 ## The lifetime of a plate
 
@@ -136,21 +177,23 @@ pv.seg('#metric', {options: [['mse', 'MSE'], ['lpe', 'LPE']], value: 'mse', onCh
 
 - **The plate runs in a sandbox.** It has an opaque origin, no network (CSP `default-src 'none'`) and no pop-ups. It cannot reach the frame around it or the server. Thus it can show data only on your screen.
 - **The plate reads files only through the frame.** The frame asks the server. The server gives only files in the allowed folders of the plate, and never hidden files.
+- **The plate cannot change the comments or start Claude.** Its messages can only ask for a file, or report an error. They can also show a selection, a mark or a key in the frame. The frame checks each message.
 - **Every request needs the access key** in `~/.cache/plateview/token-PORT` (readable only by you). The server also checks the host name of each request.
 - **An exported file** has a CSP with no network too. It holds the data and the images that the plate loaded.
+- **The print view** (`/p/ID/print`) is the exported plate in a tab of its own. It is a sandbox with an opaque origin and no network, as the plate is. Its CSP also lets it open the print dialog (`allow-modals`), and nothing more. It cannot reach the tab that opened it.
 
 ## Tests
 
 ```
-python3 tests/test_ops.py                                   # plates, files, lifetime, export, command line
-uv run --with playwright python tests/browser_test.py       # the plate in a real browser (port 8815)
+python3 tests/test_ops.py                                   # plates, files, lifetime, export, comments, the preview copy, command line (port 8817)
+uv run --with playwright python tests/browser_test.py       # the plate, Export, the PDF, the comments, the chat, the Oracle, the dashboard (port 8815)
 ```
 
 Each test uses its own state folder in `tests/tmp/` and deletes it at the end. To keep it, set `PLATEVIEW_KEEP_TMP=1`.
 
 ## Limits
 
-- **Export** holds only the files that the plate loaded. A plate that loads a file only after a click must call `pv.need([...])` at the start, so that Export has it.
+- **Export** and the PDF hold only the files that the plate loaded. A plate that loads a file only after a click must call `pv.need([...])` at the start, so that Export has it.
 - **A table** shows at most 50 000 rows, and **a data file** of more than 20 MB does not show.
 - **Links** in a plate do not open (no pop-ups). Write a path as text.
 

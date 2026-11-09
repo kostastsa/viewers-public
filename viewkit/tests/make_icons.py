@@ -15,7 +15,7 @@ with sync_playwright() as p:
     pg = b.new_page()
     pg.set_content("<!doctype html><title>icons</title>")
     pg.add_script_tag(content=(WEB / "kit.js").read_text())
-    for app in ("md", "py", "pdf", "page", "plate"):
+    for app in ("md", "py", "pdf", "page", "plate", "tex"):
         for size, name in ((1024, f"{app}-1024.png"),):  # the source of the Finder icon
             url = pg.evaluate("([app, size]) => kit.iconURL(app, size)", [app, size])
             (OUT / name).write_bytes(base64.b64decode(url.split(",", 1)[1]))

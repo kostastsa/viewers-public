@@ -5,19 +5,19 @@ description: Run the loop of a self-improving app (the viewers in ~/tools: pdfvi
 
 # Improve an app from its notes
 
-If `~/tools/viewkit/docs/self-improving-apps.md` exists, read it the first time in a session: it is the full protocol. The short form:
+If `~/tools/viewers/viewkit/docs/self-improving-apps.md` exists, read it the first time in a session: it is the full protocol. The short form:
 
 - A **note** is an issue with the label `note`: a GitHub issue of the repository of the app, or an issue of the local tracker (section "The tracker and the layout"). The user writes it in the dashboard of the app (⌘/Ctrl+Shift+.). Claude writes it with `APP note "..."`.
 - A **proposal** is one change for one note, on the branch `improve/note-N` (N is the issue number), with passed tests.
-- The **principles** are the design rules of the user: `~/tools/viewkit/PRINCIPLES.md` and `~/tools/APP/PRINCIPLES.md`.
+- The **principles** are the design rules of the user: `~/tools/viewers/viewkit/PRINCIPLES.md` and `~/tools/viewers/APP/PRINCIPLES.md`.
 - Only the user puts a change into the app.
-- **The automatic loop** (version 2, with viewkit changes since version 3): the user writes notes in the dashboard of the app (⌘/Ctrl+Shift+.) and clicks Send all. Each note starts a background run (`~/tools/viewkit/improverun.py`). The run calls this skill in the modes `implement`, `change` and `learn` (section "Background modes"). Then it runs the tests and opens a preview tab with Accept, Change… and Reject. The run, not Claude, pushes, merges and closes the issue. The interactive commands below stay for the notes from Claude and for the notes that the automatic loop did not finish (label `question`).
+- **The automatic loop** (version 2, with viewkit changes since version 3): the user writes notes in the dashboard of the app (⌘/Ctrl+Shift+.) and clicks Send all. Each note starts a background run (`~/tools/viewers/viewkit/improverun.py`). The run calls this skill in the modes `implement`, `change` and `learn` (section "Background modes"). Then it runs the tests and opens a preview tab with Accept, Change… and Reject. The run, not Claude, pushes, merges and closes the issue. The interactive commands below stay for the notes from Claude and for the notes that the automatic loop did not finish (label `question`).
 
 ## The tracker and the layout
 
-- **The tracker.** The notes are GitHub issues when the `gh` user may push to the repository. Else they are issues of the local tracker, `~/tools/viewkit/localgh.py`, with JSON files in `~/.local/share/viewkit/issues/`. The local tracker knows the `gh` commands of this skill: `issue view`, `issue comment`, `issue edit`, `issue close` and `issue list`.
+- **The tracker.** The notes are GitHub issues when the `gh` user may push to the repository. Else they are issues of the local tracker, `~/tools/viewers/viewkit/localgh.py`, with JSON files in `~/.local/share/viewkit/issues/`. The local tracker knows the `gh` commands of this skill: `issue view`, `issue comment`, `issue edit`, `issue close` and `issue list`.
   - In the background modes, `gh` is already the correct tracker.
-  - In the interactive commands, run `python3 ~/tools/viewkit/localgh.py mode ~/tools/APP`. If it prints `local`, use `~/tools/viewkit/bin/gh` in place of `gh`, and do not push.
+  - In the interactive commands, run `python3 ~/tools/viewers/viewkit/localgh.py mode ~/tools/viewers/APP`. If it prints `local`, use `~/tools/viewers/viewkit/bin/gh` in place of `gh`, and do not push.
 - **The layout.** Each app is a repository of its own next to viewkit, or all the apps and viewkit are folders of one repository (`viewers`, the public repository).
   - In `viewers`, a proposal has one worktree of the whole repository, `~/tools/wt/note-APP-N/viewers`, on one branch `improve/note-N`. The app is the folder `APP` of this worktree, and the kit is its folder `viewkit`.
   - The interactive steps of "Make a proposal", "Accept" and "Reject" are for separate repositories. In `viewers`, use the dashboard of the app: the automatic loop does these steps.
@@ -35,7 +35,7 @@ If `~/tools/viewkit/docs/self-improving-apps.md` exists, read it the first time 
 | `/improve change APP N` | Background only: change the proposal from the feedback of the preview. |
 | `/improve learn APP N REPO DECISION` | Background only: update the principles after a decision in the preview. |
 
-APP is a folder in `~/tools` (for example `pdfview`). The repository is the `origin` of `~/tools/APP`. Find it with `gh repo view --json nameWithOwner -q .nameWithOwner` in that folder.
+APP is a folder in `~/tools/viewers` (for example `pdfview`). The repository is the `origin` of `~/tools/viewers/APP`. Find it with `gh repo view --json nameWithOwner -q .nameWithOwner` in that folder.
 
 ## Background modes
 
@@ -43,7 +43,7 @@ The run of the automatic loop starts these modes with `claude -p`. Nobody reads 
 
 ### implement APP N
 
-The working directory is the worktree of the app for note N (`~/tools/wt/note-APP-N/APP`, branch `improve/note-N`). Next to it, `../viewkit` is a worktree of the kit (branch `improve/APP-note-N`). In `viewers`, `../viewkit` is the folder viewkit of the same worktree. The app imports this kit. You may edit files only in these two folders.
+The working directory is the worktree of the app for note N (`~/tools/viewers/wt/note-APP-N/APP`, branch `improve/note-N`). Next to it, `../viewkit` is a worktree of the kit (branch `improve/APP-note-N`). In `viewers`, `../viewkit` is the folder viewkit of the same worktree. The app imports this kit. You may edit files only in these two folders.
 
 1. Read the note: `gh issue view N --json title,body,comments`. The body has a **scope** line:
    - **Scope: all the viewers.** Put the change into `../viewkit` when the feature is shared (the chat panel, the dashboard, the tab, the kit styles), so that all the viewers get it. Change the app only for its own wiring.
@@ -73,16 +73,16 @@ The same folder and rules as `implement`. The last comment on the issue, "Feedba
 
 ### learn APP N REPO DECISION
 
-The working directory is `~/tools/viewkit`. DECISION is `accepted after feedback` or `rejected`.
+The working directory is `~/tools/viewers/viewkit`. DECISION is `accepted after feedback` or `rejected`.
 
 1. Read the issue with its comments: `gh issue view N -R REPO --json title,body,comments`. The feedback and the reason of the user are there.
-2. If they show a general preference of the user, add one rule to the principles, or change one, with the source `APP#N`: `~/tools/viewkit/PRINCIPLES.md` for all the viewers, or `~/tools/APP/PRINCIPLES.md` for one app (make the file if it does not exist, with a heading and the same format). Use STE. Keep the numbering.
+2. If they show a general preference of the user, add one rule to the principles, or change one, with the source `APP#N`: `~/tools/viewers/viewkit/PRINCIPLES.md` for all the viewers, or `~/tools/viewers/APP/PRINCIPLES.md` for one app (make the file if it does not exist, with a heading and the same format). Use STE. Keep the numbering.
 3. If there is nothing general to learn, change nothing.
 4. Do not commit: the run commits and pushes. **Last message:** the new rule, or "Nothing to learn."
 
 ## Triage
 
-1. **Read the rules.** Read `~/tools/viewkit/PRINCIPLES.md`, `~/tools/APP/PRINCIPLES.md` if it exists, the `README.md` of the app (its tests), `~/tools/viewkit/README.md`, and the `CLAUDE.md` files that apply.
+1. **Read the rules.** Read `~/tools/viewers/viewkit/PRINCIPLES.md`, `~/tools/viewers/APP/PRINCIPLES.md` if it exists, the `README.md` of the app (its tests), `~/tools/viewers/viewkit/README.md`, and the `CLAUDE.md` files that apply.
 2. **Read the inbox.** Run `gh issue list -R REPO --label note --state open --json number,title,body,labels,comments`. Skip a note with the label `proposed` (it waits for the user) unless it has a new comment from the user. Read the comments of each note: a note with the label `question` or `rejected` can have an answer or a reason from the user.
 3. **Join the duplicates.** If two notes are about the same problem, comment on the newer one "Same as #M", close it, and work on #M.
 4. **Decide for each note.** Use the principles. Do one of these:
@@ -97,14 +97,14 @@ Work on at most five notes in one triage. Start with the bugs, then the notes th
 
 1. **Make the worktree.** The live checkout serves the running app, and each change of a file restarts the server. Never edit it.
    ```
-   W=~/tools/wt/note-APP-N
+   W=~/tools/viewers/wt/note-APP-N
    mkdir -p "$W"
-   git -C ~/tools/APP fetch origin
-   git -C ~/tools/APP worktree add -b improve/note-N "$W/APP" origin/main
-   ln -s ~/tools/viewkit "$W/viewkit"
+   git -C ~/tools/viewers/APP fetch origin
+   git -C ~/tools/viewers/APP worktree add -b improve/note-N "$W/APP" origin/main
+   ln -s ~/tools/viewers/viewkit "$W/viewkit"
    ```
    If the change is in `viewkit`, make a viewkit worktree in place of the symlink:
-   `git -C ~/tools/viewkit worktree add -b improve/APP-note-N "$W/viewkit" origin/main`.
+   `git -C ~/tools/viewers/viewkit worktree add -b improve/APP-note-N "$W/viewkit" origin/main`.
 2. **Write a failing test first** for a bug, in the test file of the app (or of each app for a viewkit change). Run it, and see it fail.
 3. **Make the change.** One change only. Keep the diff small. Follow the principles and the style of the code. Update the README in STE if the behavior changes.
 4. **Run the tests** of the app, from the worktree. They are in the README of the app. For a viewkit change, run the tests of all the apps (`viewkit/README.md`), with the app worktrees or symlinks next to the viewkit worktree. If a test fails and you cannot fix it, do not make a proposal. Comment on the issue with what you found, and add the label `question`.
@@ -121,13 +121,13 @@ The user tries the proposal and asks for more changes in the chat, before the de
 
 The user accepts with `/improve accept APP N`.
 
-1. Check that the live checkout `~/tools/APP` is on `main` and has no changes that are not committed. If it has some, stop and tell the user. Stop the sandbox: `APP try --stop N`.
+1. Check that the live checkout `~/tools/viewers/APP` is on `main` and has no changes that are not committed. If it has some, stop and tell the user. Stop the sandbox: `APP try --stop N`.
 2. In the worktree, rebase on `origin/main` if `main` moved. Then run the tests again.
-3. Merge with a fast-forward merge: `git -C ~/tools/APP merge --ff-only improve/note-N`. The running server restarts only when a `.py` file changes. The page files (`viewer.js`, `viewer.html`) come from the disk at each request, so tell the user to reload the open tabs. For a viewkit change, merge viewkit first, then the app.
+3. Merge with a fast-forward merge: `git -C ~/tools/viewers/APP merge --ff-only improve/note-N`. The running server restarts only when a `.py` file changes. The page files (`viewer.js`, `viewer.html`) come from the disk at each request, so tell the user to reload the open tabs. For a viewkit change, merge viewkit first, then the app.
 4. Push `main`. Comment on the issue "Shipped in COMMIT", and close it.
-5. Remove the worktree and the branch: `git -C ~/tools/APP worktree remove "$W/APP"`, `git -C ~/tools/APP branch -d improve/note-N`, `git -C ~/tools/APP push origin --delete improve/note-N`, then delete the `$W` folder with the sandbox copies (remove the symlink, not the kit).
+5. Remove the worktree and the branch: `git -C ~/tools/viewers/APP worktree remove "$W/APP"`, `git -C ~/tools/viewers/APP branch -d improve/note-N`, `git -C ~/tools/viewers/APP push origin --delete improve/note-N`, then delete the `$W` folder with the sandbox copies (remove the symlink, not the kit).
 6. **Learn.** If the decision shows a preference, add a rule to the principles or change one, with the source `APP#N`. A change in only one app goes into `APP/PRINCIPLES.md`. Commit the principles in their repository and push.
-7. Tell the user to run `git -C ~/tools/APP pull` on the other computer.
+7. Tell the user to run `git -C ~/tools/viewers/APP pull` on the other computer.
 
 ## Reject
 

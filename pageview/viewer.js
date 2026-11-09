@@ -578,6 +578,8 @@ document.addEventListener('mousedown', ev => {
 // ------------------------------------------------------------ chat
 const chat = kit.chatPanel({
   key: 'pageview',
+  account: {get: () => api('GET', '/api/account?f=' + encodeURIComponent(FILE)),
+            post: body => api('POST', '/api/account', body)},
   poll: true,
   ready: () => !!S.doc,
   empty: 'Ask about this page. Claude can read it and its data files. It can change the page and answer or add comments when you ask. ' +

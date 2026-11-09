@@ -1,5 +1,6 @@
 """Browser test of plateview: a plate in its sandbox, the data and images by messages, the allowed folders, live data,
-update, errors, Export, Keep, Delete, and the lifetime (a short GRACE). It uses its own server on port 8815 and its own
+update, errors, Export, Keep, the comments (words, cells, the whole plate), the chat, the Oracle, the dashboard of the
+notes, Delete, and the lifetime (a short GRACE). The chat and the Oracle use viewkit/tests/fake_claude.py. It uses its own server on port 8815 and its own
 state folder. Needs Playwright and its Chromium. Run: uv run --with playwright python tests/browser_test.py
 It deletes its temporary folder in tests/tmp at the end. Set PLATEVIEW_KEEP_TMP=1 to keep it for debugging."""
 import json
@@ -15,6 +16,7 @@ from playwright.sync_api import sync_playwright
 
 HERE = Path(__file__).resolve().parent
 PLATEVIEW = str(HERE.parent / "plateview.py")
+KIT = HERE.parent.parent / "viewkit"
 PORT = "8815"
 TMP_ROOT = HERE / "tmp"
 TMP_ROOT.mkdir(exist_ok=True)
@@ -22,8 +24,16 @@ tmp = Path(tempfile.mkdtemp(prefix="browser-", dir=TMP_ROOT))
 data = tmp / "data"
 shutil.copytree(HERE.parent / "examples" / "demo", data)
 (tmp / "secret.csv").write_text("a,b\n1,2\n")
+bindir = tmp / "bin"  # a stand-in `claude` for the chat and the Oracle
+bindir.mkdir()
+(bindir / "claude").write_text('#!/bin/sh\nexec python3 "%s" "$@"\n' % (KIT / "tests" / "fake_claude.py"))
+(bindir / "claude").chmod(0o755)
 env = {k: v for k, v in os.environ.items() if not k.startswith("CLAUDE")}  # plates with no Claude session
-env.update(PLATEVIEW_PORT=PORT, PLATEVIEW_STATE=str(tmp / "state"), PLATEVIEW_GRACE="4", PLATEVIEW_REAP="1")
+env.update(PLATEVIEW_PORT=PORT, PLATEVIEW_STATE=str(tmp / "state"), PLATEVIEW_GRACE="4", PLATEVIEW_REAP="1",
+           PLATEVIEW_CLAUDE=str(bindir / "claude"), VIEWKIT_GH=str(KIT / "tests" / "fake_gh.py"),
+           FAKE_GH_LOG=str(tmp / "gh.jsonl"), VIEWKIT_NOTES_QUEUE=str(tmp / "notes-queue.jsonl"),
+           VIEWKIT_AUTO_IMPROVE="0", VIEWKIT_IMPROVE_DIR=str(tmp / "improve"))
+MOD = "Meta" if sys.platform == "darwin" else "Control"
 failures = []
 
 
@@ -144,6 +154,30 @@ try:
               [u for u in reqs if not u.startswith(("file:", "blob:", "data:"))][:3])
         pe.close()
 
+        # --- PDF: ⌘/Ctrl+P (also from inside the plate) opens the print view, which opens the print dialog
+        ctx.add_init_script("window.print = () => { window.__printed = true; }")
+        pg.locator("#title").click()
+        with ctx.expect_page() as np:
+            pg.keyboard.press("ControlOrMeta+p")
+        pp = np.value
+        pp.wait_for_function("() => window.__printed === true", timeout=15000)
+        check("⌘/Ctrl+P opens the print view of the plate, and it opens the print dialog",
+              pp.url.startswith(url.split("?")[0] + "/print") and pp.title() == "Optimizers on CIFAR-10"
+              and pp.locator(".pv-table tbody tr").count() == 6 and pp.locator(".pv-grid tbody tr").count() == 10, pp.url)
+        check("the print view shows the figures and the light theme",
+              pp.evaluate("() => [...document.images].every(i => i.complete && i.naturalWidth > 0)")
+              and pp.evaluate("() => document.documentElement.dataset.theme") == "light")
+        check("the print view is a sandbox: no opener, no server",
+              pp.evaluate("() => self.origin") == "null" and pp.evaluate("() => window.opener") is None
+              and pp.evaluate("async () => { try { await fetch('/api/plates'); return 'fetched'; } catch (e) { return 'blocked'; } }") == "blocked")
+        pp.close()
+        frame.locator("h1").click()
+        with ctx.expect_page() as np:
+            pg.keyboard.press("ControlOrMeta+p")
+        np.value.wait_for_function("() => window.__printed === true", timeout=15000)
+        check("⌘/Ctrl+P works also when the plate has the focus", np.value.url.startswith(url.split("?")[0] + "/print"))
+        np.value.close()
+
         # --- Keep
         pg.locator("#keepBtn").click()
         pg.wait_for_timeout(300)
@@ -151,6 +185,106 @@ try:
         pg.locator("#keepBtn").click()
         pg.wait_for_timeout(300)
         check("a second click takes Keep back", plates()[pid]["kept"] is False)
+
+        # --- comments: on selected words of the plate
+        def comments():
+            return json.loads(cli("comments", pid, "--json").stdout or "[]")
+        title = frame.evaluate("() => document.querySelector('h1').textContent.trim()")
+        frame.evaluate("""() => { const r = document.createRange(); r.selectNodeContents(document.querySelector('h1'));
+                                  getSelection().removeAllRanges(); getSelection().addRange(r); }""")
+        pg.locator("#cbtn").wait_for(state="visible", timeout=5000)
+        check("a selection in the plate shows the comment button", "Comment" in pg.locator("#cbtn").inner_text())
+        pg.locator("#cbtn").click()
+        pg.locator("#pop textarea").wait_for(timeout=5000)
+        check("the comment box opens on the plate, and the sidebar stays closed",
+              pg.evaluate("() => document.body.classList.contains('noside')"))
+        pg.locator("#pop textarea").fill("Is this the right title? $x^2$")
+        pg.keyboard.press(f"{MOD}+Enter")
+        pg.wait_for_timeout(600)
+        cs = comments()
+        check("the comment goes into the comments of the plate, with the words", len(cs) == 1 and cs[0]["anchor"]["quote"] == title, cs)
+        nmarks = frame.evaluate("() => CSS.highlights.get('pv-mark').size + CSS.highlights.get('pv-active').size")
+        check("the plate marks the words of the comment", nmarks == 1, nmarks)
+        check("the button shows the number of comments", pg.locator("#sideBtn").inner_text() == "Comments 1")
+
+        # --- comments: on a cell of a table
+        fr.locator(".pv-table tbody td").nth(1).click()
+        pg.locator("#cbtn", has_text="cell").wait_for(state="visible", timeout=5000)
+        pg.locator("#cbtn").click()
+        pg.locator("#pop textarea").fill("Check this number.")
+        pg.locator("#pop button", has_text="Comment").click()
+        pg.wait_for_timeout(800)
+        cs = comments()
+        check("a cell comment names the data file, the row and the column", len(cs) == 2 and cs[1]["anchor"]
+              and cs[1]["anchor"].get("table") == "runs.csv" and cs[1]["anchor"].get("col"), cs[-1:])
+        check("the plate marks the cell with a comment", fr.locator(".pv-table td.cmt").count() == 1)
+
+        # --- comments: about the whole plate, in the sidebar
+        pg.locator("#sideBtn").click()
+        pg.locator("#generalBtn").click()
+        pg.locator("#threads .composer textarea").fill("A general remark.")
+        pg.locator("#threads .composer button", has_text="Comment on the plate").click()
+        pg.wait_for_timeout(600)
+        check("a general comment shows in the sidebar", pg.locator("#threads .thread").count() == 3
+              and "General comment" in pg.locator("#threads").inner_text())
+        pg.locator("#threads .thread", has_text="Is this the right title").locator("q").click()
+        pg.wait_for_timeout(400)
+        check("a click on a comment marks its words as the active comment",
+              frame.evaluate("() => CSS.highlights.get('pv-active').size") == 1)
+        pg.locator("#threads .thread", has_text="A general remark").locator("button", has_text="Resolve").click()
+        pg.wait_for_timeout(500)
+        check("Resolve removes a comment", len(comments()) == 2)
+        pg.locator("#undoBtn").click()
+        pg.wait_for_timeout(500)
+        check("Undo brings it back", len(comments()) == 3)
+        cli("reply", pid, "1", "Yes, it is.")
+        pg.locator("#threads .thread", has_text="Is this the right title").locator(".pill.answered").wait_for(timeout=6000)
+        check("a reply from the command line shows in the sidebar", "Yes, it is." in pg.locator("#threads").inner_text())
+        r = cli("comments", pid)
+        check("plateview comments lists the threads", "#1" in r.stdout and "[answered]" in r.stdout and "#3  general" in r.stdout, r.stdout)
+
+        # --- the keys work when the plate has the focus: the dashboard of the notes (⌘/Ctrl+Shift+.)
+        fr.locator("h1").click()
+        pg.keyboard.press(f"{MOD}+Shift+Period")
+        pg.locator(".kitDash textarea").wait_for(timeout=5000)
+        check("⌘/Ctrl+Shift+. in the plate opens the dashboard", pg.locator(".kitDash").count() == 1)
+        pg.locator(".kitDash textarea").fill("The plate needs a dark grid.")
+        pg.keyboard.press("Enter")
+        pg.locator(".kitDashList", has_text="dark grid").wait_for(timeout=5000)
+        snap = tmp / "state" / "notes" / pid / "plate.html.plate.json"
+        info = json.loads(snap.read_text()) if snap.is_file() else {}
+        check("a note waits in the dashboard, with a copy of the plate for its preview",
+              (tmp / "state" / "notes" / pid / "plate.html").is_file() and info.get("allow") == [str(data.resolve())]
+              and len(info.get("threads", [])) == 3, info)
+        pg.keyboard.press("Escape")
+        check("Esc closes the dashboard", pg.locator(".kitDash").count() == 0)
+
+        # --- the chat: Claude answers, and can change the plate
+        pg.locator("#chatOpen").click()
+        pg.locator("#chatText").fill("Make it better EDIT")
+        pg.locator("#chatSend").click()
+        pg.locator(".cm.assistant", has_text="Hello from fake Claude").wait_for(timeout=15000)
+        html_file = tmp / "state" / "plates" / pid / "plate.html"
+        pg.wait_for_function("() => !document.querySelector('#chatSend').classList.contains('stop')", timeout=15000)
+        check("the chat answers in the panel", "Done." in pg.locator("#chatMsgs").inner_text())
+        check("the chat can change the HTML of the plate", "edited by fake claude" in html_file.read_text())
+        log = (tmp / "state" / "plates" / pid / "chat.json")
+        check("the conversation is kept with the plate", log.is_file() and "Make it better" in log.read_text())
+        pg.locator("#chatMin").click()
+        cli("update", pid, str(data / "demo.html"))
+        fr.locator(".pv-table tbody tr").first.wait_for(timeout=10000)
+        pg.wait_for_timeout(1500)
+
+        # --- the Oracle: a background run answers the open comments
+        check("the Oracle button is on while comments are open", pg.locator("#oracleBtn").is_enabled())
+        pg.locator("#oracleBtn").click()
+        pg.locator(".toast", has_text="answered the comments").wait_for(timeout=20000)
+        cs = comments()
+        check("the Oracle answers every open comment", all(t["status"] == "answered" for t in cs) and
+              "fake Oracle" in pg.locator("#threads").inner_text(), [t["status"] for t in cs])
+        check("the plate still marks its comments after a reload",
+              frame.evaluate("() => CSS.highlights.get('pv-mark').size + CSS.highlights.get('pv-active').size") == 1
+              and fr.locator(".pv-table td.cmt").count() == 1)
 
         # --- the lifetime: a plate stays while a tab shows it, and goes GRACE seconds after the tab closes
         pid2, url2 = new(str(data / "demo.html"))

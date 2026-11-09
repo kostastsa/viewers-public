@@ -319,7 +319,7 @@ def companions_of(m, p):
 # code of the proposal runs as the user, but it sees only the copies (and the files that the user grants to it).
 
 def worktree_of(app, app_dir, n):
-    """The folder ~/tools/wt/note-APP-N and the folder of the app in it: the worktree of the app (W/APP), or in the
+    """The folder wt/note-APP-N (~/tools/wt for the repository viewers) and the folder of the app in it: the worktree of the app (W/APP), or in the
     repository viewers the folder of the app in the worktree of the whole repository (W/viewers/APP). The wt folder is
     next to the app repositories, or next to the repository viewers. The tests set VIEWKIT_WT in place of it."""
     mono = mono_root(app_dir)
@@ -377,6 +377,12 @@ def start_sandbox(app, app_dir, n, srcs, extra_env=None):
     if not srcs and not samples and m.get("default_file"):
         srcs = [wt / m["default_file"]]
     copies = copy_docs(m, box, srcs) + copy_docs(m, box / "samples", samples)
+    try:  # each copy of a document starts with the Claude Code account of the document
+        import claudekit
+        for src, c in zip(srcs, copies):
+            claudekit.set_account(c.resolve(), claudekit.account(src.resolve())[0])
+    except Exception as e:  # the account is not necessary for the preview
+        print(f"sandbox: no account for the copies: {e}", file=sys.stderr)
     r = subprocess.run([sys.executable, str(script), *map(str, copies), "--no-open"], env=sandbox_env(m, n, extra_env),
                        capture_output=True, text=True, timeout=60)
     links = [x for x in r.stdout.split() if x.startswith("http")]

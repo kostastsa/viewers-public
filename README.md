@@ -8,7 +8,7 @@ Local viewers for documents, code and data, made to work with [Claude Code](http
 | [`pyview`](pyview) | Python cell files (`.py` with `# %%` cells). It runs the cells and shows the outputs. | Lines `#>` in the file. Claude edits the cells and runs them. |
 | [`pdfview`](pdfview) | PDF files. The PDF does not change. | A JSON file next to the PDF. Claude replies in each thread. |
 | [`pageview`](pageview) | Rich pages: Markdown with tables, charts and figures from CSV or JSON files | A JSON file next to the page. |
-| [`plateview`](plateview) | Plates: HTML pages that Claude writes, which show live data files | No comments. |
+| [`plateview`](plateview) | Plates: HTML pages that Claude writes, which show live data files | In the folder of the plate. They go when the plate goes. |
 | [`viewkit`](viewkit) | The code that the viewers share, the Claude Code skills, and the installer | |
 
 Each viewer runs a small local server and opens a page in your browser. The viewers use the Python standard library only.
@@ -18,7 +18,7 @@ Each viewer runs a small local server and opens a page in your browser. The view
 The viewers are made and tested on macOS. You need git and Python 3.9 or newer.
 
 ```
-git clone https://github.com/kostastsa/viewers ~/tools/viewers
+git clone https://github.com/kostastsa/viewers-public ~/tools/viewers
 ~/tools/viewers/install.sh
 ```
 
@@ -50,6 +50,7 @@ The command opens the browser. In the page, select text to comment on it. To get
 | `/answer-cells FILE.py` | Answer the comments in a cell file, and change and run the cells (pyview) |
 | `/answer-pdf FILE.pdf` | Answer the comments on a PDF (pdfview) |
 | `/answer-page FILE.md` | Answer the comments on a page (pageview) |
+| `/answer-plate ID` | Answer the comments on a plate (plateview) |
 | `/page` | Make a pageview page from your data |
 | `/plate` | Make a plate from your data files |
 | `/improve APP` | Work on the notes to a viewer (see Improve the viewers) |

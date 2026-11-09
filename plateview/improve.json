@@ -1,0 +1,22 @@
+{
+  "app": "plateview",
+  "port_env": "PLATEVIEW_PORT",
+  "claude_env": "PLATEVIEW_CLAUDE",
+  "tests": [
+    "python3 tests/test_ops.py",
+    "uv run --with playwright python tests/browser_test.py"
+  ],
+  "companions": [
+    "{name}.plate.json",
+    "runs.csv",
+    "curves.csv",
+    "vision_grid.csv",
+    "fig/lr_scatter.png",
+    "fig/confusion_adamw.png",
+    "fig/gradnorm_e10.pdf"
+  ],
+  "default_file": "examples/demo/demo.html",
+  "samples": [
+    "examples/demo/demo.html"
+  ]
+}

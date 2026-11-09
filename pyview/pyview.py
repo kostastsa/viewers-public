@@ -20,7 +20,7 @@ Usage:
     pyview --remote HOST notes.py    start the viewer on another computer (over SSH) and open it here
     pyview note TEXT                 a note to pyview itself: a problem or a wish (a GitHub issue). "-": stdin.
     pyview try N [notes.py]          try the proposal of note N in a sandbox (port 8900+N, copies of the files)
-    pyview --setup                   build the shared interpreter, ~/tools/pyview/.venv
+    pyview --setup                   build the shared interpreter, ~/tools/viewers/pyview/.venv
     pyview --status | --stop | --restart
 
 One server runs in the background on 127.0.0.1:8766 (PYVIEW_PORT) and serves files under your
@@ -520,7 +520,7 @@ def outputs_text(outputs, path, limit=0):
 
 def find_python(path, lines, override=None):
     """(interpreter, where it came from), or (None, message). Order: PYVIEW_PYTHON, the file's
-    `# pyview: python=` line, the nearest .venv above the file, the shared ~/tools/pyview/.venv."""
+    `# pyview: python=` line, the nearest .venv above the file, the shared ~/tools/viewers/pyview/.venv."""
     def ok(p):
         p = Path(p).expanduser()
         return p if p.is_file() and os.access(p, os.X_OK) else None
@@ -992,7 +992,7 @@ class Session:
         mode = (CHAT_MODE_ASK if ask_only else CHAT_MODE_EDIT) + "\n"
         cmd = claudekit.build_command("claude", mode + ctx + text, system, d["session"], d.get("started"),
                                       CHAT_TOOLS_ASK if ask_only else CHAT_TOOLS_EDIT)
-        err, stderr, code = claudekit.run_stream(cmd, path.parent, claudekit.clean_env("CLAUDE_CODE"), self.chat_event, self.set_chat_proc)
+        err, stderr, code = claudekit.run_stream(cmd, path.parent, claudekit.clean_env("CLAUDE_CODE", path), self.chat_event, self.set_chat_proc)
         with self.lock:
             cur = self.chat_cur
             claudekit.finish(cur, err, stderr, code, self.chat_stop_flag)
@@ -1288,7 +1288,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, p.read_bytes(), VENDOR_TYPES[p.suffix])
 
         if url.path in ("/api/version", "/api/doc", "/api/events", "/api/img", "/api/batch", "/api/claude", "/api/chat",
-                        "/api/improve/dash", "/api/improve/preview"):
+                        "/api/account", "/api/improve/dash", "/api/improve/preview"):
             p, rel, err = self.py_path(q)
             if err:
                 return self.send_json(err[0], {"error": err[1]})
@@ -1305,6 +1305,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send_json(500, {"error": str(e)})
             if url.path == "/api/claude":
                 return self.send_json(200, claude_status(p))
+            if url.path == "/api/account":  # the Claude Code account of the chat and the Oracle (claudekit)
+                return self.send_json(*claudekit.account_api("GET", doc=p))
             if url.path == "/api/chat":
                 return self.send_json(200, app.session(p).chat_snapshot())
             if url.path == "/api/batch":
@@ -1356,7 +1358,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.deny(True)
         path = urlparse(self.path).path
         if path not in ("/api/op", "/api/grant", "/api/trust", "/api/run", "/api/interrupt", "/api/restart",
-                        "/api/python", "/api/claude", "/api/chat", "/api/improve/dash", "/api/improve/preview"):
+                        "/api/python", "/api/claude", "/api/chat", "/api/account", "/api/improve/dash",
+                        "/api/improve/preview"):
             return self.send_json(404, {"error": "Not found"})
         try:
             op = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
@@ -1401,6 +1404,8 @@ class Handler(BaseHTTPRequestHandler):
             if sess.chat_cur is not None:
                 return self.send_json(409, {"error": "Claude is answering in the chat. Wait for it, or stop it."})
             return self.send_json(200, start_claude(p))
+        if path == "/api/account":  # the Claude Code account of the chat and the Oracle (claudekit)
+            return self.send_json(*claudekit.account_api("POST", op, p))
         if path == "/api/chat":
             action = op.get("action", "send")
             if action == "stop":
@@ -1510,7 +1515,7 @@ def start_claude(p):
     d = STATE_DIR / "claude"
     d.mkdir(parents=True, exist_ok=True)
     key = _claude_key(p)
-    env = claudekit.clean_env("CLAUDE_CODE")
+    env = claudekit.clean_env("CLAUDE_CODE", p)
     log = open(d / f"{key}.log", "wb")
     proc = subprocess.Popen(
         ["claude", "-p", f"/answer-cells {p}", "--allowedTools", ",".join(CLAUDE_TOOLS)],

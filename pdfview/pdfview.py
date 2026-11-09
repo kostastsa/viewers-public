@@ -59,7 +59,6 @@ from urllib.parse import parse_qs, quote, unquote, urlencode, urlparse
 HERE = Path(__file__).resolve().parent
 VIEWER = HERE / "viewer.html"
 VIEWER_JS = HERE / "viewer.js"
-VENDOR = HERE / "vendor"
 ROOT = Path(os.environ.get("PDFVIEW_ROOT") or Path.home()).expanduser().resolve()
 PORT = int(os.environ.get("PDFVIEW_PORT") or 8767)
 STATE_DIR = Path.home() / ".cache" / "pdfview"
@@ -83,9 +82,6 @@ DAEMON = serverkit.Daemon("pdfview", STATE_DIR, __file__, "PDFVIEW_PORT")
 grants_file, write_private = DAEMON.grants_file, DAEMON.write_private
 new_token, read_token = DAEMON.new_token, DAEMON.read_token
 ping, ensure_server, stop_server = DAEMON.ping, DAEMON.ensure_server, DAEMON.stop_server
-
-VENDOR_TYPES = {".mjs": "text/javascript; charset=utf-8", ".bcmap": "application/octet-stream",
-                ".pfb": "application/octet-stream", ".ttf": "font/ttf"}
 
 # Content-Security-Policy per kind of response. The viewer may run only its own scripts (viewer.js, the kit, PDF.js and
 # its worker, MathJax) and talk only to this server. PDF.js makes fonts from data and draws on canvases, so it needs
@@ -469,7 +465,7 @@ class Chat:
         allowed, denied = (CHAT_TOOLS_ASK, CHAT_DENY_ASK) if ask_only else (CHAT_TOOLS, CHAT_DENY)
         cmd = claudekit.build_command(exe, mode + ctx + ("\n" if ctx else "") + text,
                                       CHAT_SYSTEM.replace("<FILE>", str(p)), sid, started, allowed, denied)
-        err, stderr, code = claudekit.run_stream(cmd, p.parent, claudekit.clean_env(), self.event, self.set_proc)
+        err, stderr, code = claudekit.run_stream(cmd, p.parent, claudekit.clean_env(doc=p), self.event, self.set_proc)
         after = comments_text(p)
         changed = after != before
         if changed and Handler.app is not None:  # one Undo takes back everything that this turn changed
@@ -704,17 +700,12 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, VIEWER.read_text(encoding="utf-8"), csp=CSP_VIEWER)
         if url.path == "/viewer.js":
             return self.send(200, VIEWER_JS.read_bytes(), "text/javascript; charset=utf-8")
-        if url.path.startswith("/kit/"):  # the page code that the viewers share
+        if url.path.startswith("/kit/"):  # the page code that the viewers share, and PDF.js (/kit/vendor/pdfjs/)
             a = serverkit.kit_asset(unquote(url.path[len("/kit/"):]))
             return self.send(200, a[0], a[1]) if a else self.send(404, "Not found")
-        if url.path.startswith("/vendor/"):  # the local copy of PDF.js, its cmaps and its fonts
-            p = (VENDOR / unquote(url.path[len("/vendor/"):])).resolve()
-            if VENDOR.resolve() not in p.parents or not p.is_file() or p.suffix not in VENDOR_TYPES:
-                return self.send(404, "Not found")
-            return self.send(200, p.read_bytes(), VENDOR_TYPES[p.suffix])
 
         if url.path in ("/pdf", "/api/doc", "/api/version", "/api/chat", "/api/claude", "/api/improve/dash",
-                        "/api/improve/preview"):
+                        "/api/account", "/api/improve/preview"):
             p, rel, err = self.pdf_path(q)
             if err:
                 return self.send_json(err[0], {"error": err[1]})
@@ -733,6 +724,8 @@ class Handler(BaseHTTPRequestHandler):
                 st = ORACLE.status(p)
                 app.oracle_seen(p, st)
                 return self.send_json(200, st)
+            if url.path == "/api/account":  # the Claude Code account of the chat and the Oracle (claudekit)
+                return self.send_json(*claudekit.account_api("GET", doc=p))
             if url.path == "/api/chat":
                 since = (q.get("since") or [""])[0]
                 return self.send_json(200, chat_of(p).snapshot(int(since) if since.isdigit() else None))
@@ -750,7 +743,8 @@ class Handler(BaseHTTPRequestHandler):
         if not self.authorized():
             return self.deny(True)
         path = urlparse(self.path).path
-        if path not in ("/api/op", "/api/grant", "/api/chat", "/api/claude", "/api/improve/dash", "/api/improve/preview"):
+        if path not in ("/api/op", "/api/grant", "/api/chat", "/api/account", "/api/claude", "/api/improve/dash",
+                        "/api/improve/preview"):
             return self.send_json(404, {"error": "Not found"})
         try:
             op = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
@@ -785,6 +779,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/improve/preview":  # the decision in the preview tab: accept, change or reject
             return self.send_json(*improvekit.preview_api("POST", op))
 
+        if path == "/api/account":  # the Claude Code account of the chat and the Oracle (claudekit)
+            return self.send_json(*claudekit.account_api("POST", op, p))
         if path == "/api/chat":  # the chat panel: send a message, stop the answer, or start a new conversation
             chat = chat_of(p)
             action = op.get("action", "send")

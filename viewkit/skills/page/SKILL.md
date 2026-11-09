@@ -5,11 +5,11 @@ description: Make or change a pageview page, the local replacement for a claude.
 
 # Make a pageview page
 
-**pageview** (`~/tools/pageview`) shows a Markdown file with extra blocks as a rich page in the browser. It reads the data of tables and charts from CSV, TSV or JSON files next to the page. It updates the page when a file changes. The user comments on the page in the viewer.
+**pageview** (`~/tools/viewers/pageview`) shows a Markdown file with extra blocks as a rich page in the browser. It reads the data of tables and charts from CSV, TSV or JSON files next to the page. It updates the page when a file changes. The user comments on the page in the viewer.
 
 ## Before you write
 
-1. **Read the syntax.** Read `~/tools/pageview/SYNTAX.md` in full the first time in a session. Use only the blocks and the options in it.
+1. **Read the syntax.** Read `~/tools/viewers/pageview/SYNTAX.md` in full the first time in a session. Use only the blocks and the options in it.
 2. **Find the data.** Use the real files of the user (results, logs, CSV files). Do not invent numbers. If you must show an example, say in the page that the numbers are examples.
 3. **Read the rules of the folder.** Read the `CLAUDE.md` files that apply. Follow them.
 

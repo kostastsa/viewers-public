@@ -68,7 +68,7 @@ try:
             if name == "paper.pdf":
                 check(f"{name}: the sidebar shows the three comment threads", pg.locator("#threads .thread").count() == 3,
                       pg.locator("#threads .thread").count())
-                k = pg.evaluate("() => (S.pages[0].links || []).length")
+                k = pg.evaluate("() => (pv.pages[0].links || []).length")
                 check(f"{name}: the viewer finds the links inside the PDF on page 1", k > 3, k)
                 pg.locator("#navBtn").click()
                 check(f"{name}: the contents list the sections", "Introduction" in pg.inner_text("#outline"),

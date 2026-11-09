@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 """A stand-in for the `claude` command that prints the same stream-json events. Used by the tests of mdview, pyview and
-pdfview. The prompt can contain: SLOW (the answer takes a few seconds), EDIT (it appends a line to the file, or for a PDF
-it adds a comment with `pdfview add`), FAIL (it exits with an error).
+pdfview and texview. The prompt can contain: SLOW (the answer takes a few seconds), EDIT (it appends a line to the file;
+for a PDF it adds a comment with `pdfview add`; for a .tex file it suggests "tight" -> "sharp" with `texview suggest`),
+FAIL (it exits with an error).
+With FAKE_CLAUDE_ACCOUNT_LOG, each run writes its CLAUDE_CONFIG_DIR (or "-") to that file.
 The file is found in the system prompt of the app: pyview says "the file PATH (a .py file)", mdview and pdfview say
 "the file PATH.".
 A run of the self-improving loop has the prompt '/improve MODE APP N': for implement and change it adds a line to
 README.md in its folder and commits it (with FAKE_IMPROVE_KIT=1 it also changes ../viewkit/README.md, not committed);
 for learn it does nothing. With FAKE_IMPROVE_GH_FILE, it writes the title from `gh issue view N` to that file. With
 FAKE_IMPROVE_QUESTION_FILE, the first implement asks a question and makes the file.
-An Oracle run has no system prompt and its prompt is '/SKILL "PATH"'. It waits one second, prints a report, and for a
-PDF it replies to each open thread with `pdfview reply`. If the path contains FAIL, it exits with an error."""
+An Oracle run has no system prompt and its prompt is '/SKILL "PATH"' (or '/answer-plate ID'). It waits one second,
+prints a report, and for a PDF, a .tex file or a plate it replies to each open thread with the reply command of the app. If the path contains FAIL, it exits with an error."""
 import json
 import os
 import re
@@ -21,6 +23,9 @@ args = sys.argv[1:]
 if os.environ.get("FAKE_CLAUDE_LOG"):
     with open(os.environ["FAKE_CLAUDE_LOG"], "a") as f:
         f.write(json.dumps(args) + "\n")
+if os.environ.get("FAKE_CLAUDE_ACCOUNT_LOG"):  # the account of the run (claudekit.clean_env)
+    with open(os.environ["FAKE_CLAUDE_ACCOUNT_LOG"], "a") as f:
+        f.write((os.environ.get("CLAUDE_CONFIG_DIR") or "-") + "\n")
 prompt = args[args.index("-p") + 1]
 if prompt.startswith("/improve "):  # a run of the self-improving loop (improverun.py), in the worktree of a note
     words = prompt.split()
@@ -55,6 +60,22 @@ if "--append-system-prompt" not in args:  # an Oracle run: /answer-comments "PAT
     if "FAIL" in path:
         print("boom: the Oracle failed")
         sys.exit(2)
+    if path.endswith(".tex"):  # texview: a reply to each open comment
+        texview = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "texview", "texview.py")
+        threads = json.loads(subprocess.run([sys.executable, texview, "list", path, "--json"], capture_output=True,
+                                            text=True).stdout or "[]")
+        for t in threads:
+            if t["status"] == "open":
+                subprocess.run([sys.executable, texview, "reply", path, str(t["id"]), "-"], input="Answer from the fake Oracle, $x^2$.",
+                               capture_output=True, text=True)
+    if re.fullmatch(r"[a-z0-9]{8,32}", path):  # plateview: the id of a plate, a reply to each open comment
+        plateview = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "plateview", "plateview.py")
+        threads = json.loads(subprocess.run([sys.executable, plateview, "comments", path, "--json"], capture_output=True,
+                                            text=True).stdout or "[]")
+        for t in threads:
+            if t["status"] == "open":
+                subprocess.run([sys.executable, plateview, "reply", path, str(t["id"]), "-"], input="Answer from the fake Oracle, $x^2$.",
+                               capture_output=True, text=True)
     if path.endswith(".pdf"):
         pdfview = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "pdfview", "pdfview.py")
         threads = json.loads(subprocess.run([sys.executable, pdfview, "list", path, "--json"], capture_output=True,
@@ -95,6 +116,13 @@ if "EDIT" in prompt and "Ask only" not in prompt and path.endswith(".pdf"):  # t
     cmd = ["pdfview", "add", path, "Added by fake Claude"]
     out({"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Bash", "input": {"command": " ".join(cmd)}}]}})
     subprocess.run([sys.executable, pdfview, *cmd[1:]], capture_output=True)
+    say(["Done."])
+elif "EDIT" in prompt and "Ask only" not in prompt and path.endswith(".tex"):  # texview: a suggested change, no edit
+    texview = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "texview", "texview.py")
+    cmd = ["texview", "suggest", path, "--file", os.path.basename(path)]
+    out({"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Bash", "input": {"command": " ".join(cmd)}}]}})
+    subprocess.run([sys.executable, texview, *cmd[1:]], input="<<<<<<< old\nthe bound is tight\n=======\nthe bound is sharp\n"
+                   ">>>>>>> new\nSuggested by fake Claude.\n", capture_output=True, text=True)
     say(["Done."])
 elif "EDIT" in prompt and "Ask only" not in prompt:
     out({"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Edit", "input": {"file_path": path}}]}})

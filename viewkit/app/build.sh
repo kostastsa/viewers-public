@@ -10,13 +10,17 @@
 #     UTI        the uniform type identifier of the files (net.daringfireball.markdown, public.python-script, com.adobe.pdf),
 #                or more than one, separated by commas (net.daringfireball.markdown,public.json)
 #     EXT        the file extensions (md markdown, py, pdf)
+#   --default    (anywhere) also make NAME the default app of these types, with duti (brew install duti)
 set -euo pipefail
-if [ $# -lt 5 ]; then sed -n '2,13p' "$0"; exit 2; fi
+DEFAULT=0; rest=()
+for a in "$@"; do if [ "$a" = "--default" ]; then DEFAULT=1; else rest+=("$a"); fi; done
+set -- ${rest[@]+"${rest[@]}"}
+if [ $# -lt 5 ]; then sed -n '2,14p' "$0"; exit 2; fi
 NAME=$1; ICON=$2; TYPE_NAME=$3; UTI=$4; shift 4
 KIT="$(cd "$(dirname "$0")/.." && pwd)"
 APP="$HOME/Applications/$NAME.app"
 CMD="$HOME/.local/bin/$NAME"
-[ -x "$CMD" ] || { echo "$NAME: $CMD is missing. Link it first, e.g.: ln -s ~/tools/$NAME/$NAME.py $CMD" >&2; exit 1; }
+[ -x "$CMD" ] || { echo "$NAME: $CMD is missing. Link it first, e.g.: ln -s ~/tools/viewers/$NAME/$NAME.py $CMD" >&2; exit 1; }
 mkdir -p "$HOME/Applications"
 rm -rf "$APP"
 
@@ -77,4 +81,12 @@ codesign --force --sign - "$APP" >/dev/null 2>&1 || true
 touch "$APP"  # so Finder shows the new icon
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$APP"
 echo "Installed $APP"
-echo "Finder: right click a .$1 file > Open With > $NAME. To make $NAME the default: Get Info > Open with > $NAME > Change All…"
+if [ "$DEFAULT" = 1 ] && command -v duti >/dev/null; then
+  for u in "${UTIS[@]}"; do duti -s "local.$NAME.app" "$u" all; done
+  for ext in "$@"; do duti -s "local.$NAME.app" ".$ext" all; done
+  echo "$NAME is now the default app of: ${UTIS[*]} ($*). A double-click in Finder opens these files with $NAME."
+else
+  [ "$DEFAULT" = 1 ] && echo "duti is missing (brew install duti): set the default app in Finder." >&2
+  echo "Finder: right click a .$1 file > Open With > $NAME. To make $NAME the default: Get Info > Open with > $NAME > Change All…"
+  echo "Or run this script again with --default."
+fi

@@ -142,6 +142,10 @@ try:
         top1 = pg.evaluate("() => document.getElementById('pages').scrollTop")
         check("⌘/Ctrl+[ goes back to the place before the link", abs(top1 - top0) < 3 and pg.locator("#pageNum").input_value() == "1",
               (top0, top1))
+        pg.keyboard.press("Control+BracketRight")
+        pg.wait_for_timeout(400)
+        check("⌘/Ctrl+] goes forward to the place of the link again (texview#22)", pg.locator("#pageNum").input_value() == "2",
+              pg.locator("#pageNum").input_value())
         url0 = pg.url
         wx, wy, top0 = at_point(1, 165, 344)
         pg.wait_for_timeout(200)
@@ -318,7 +322,7 @@ try:
         # --- the text size of the chat: Cmd/Ctrl+= and - with the focus in the chat, or Ctrl+wheel on the chat
         CZOOM = "() => getComputedStyle(document.querySelector('#chatMsgs')).zoom"
         FS = "() => document.querySelector('#chatMsgs .cm').getBoundingClientRect().height"
-        h0, zoom0 = pg.evaluate(FS), pg.evaluate("() => S.scale")
+        h0, zoom0 = pg.evaluate(FS), pg.evaluate("() => pv.scale")
         pg.locator("#chatText").focus()
         pg.keyboard.press("Control+Equal")
         pg.keyboard.press("Control+Equal")
@@ -338,7 +342,7 @@ try:
         pg.keyboard.up("Control")
         pg.wait_for_timeout(200)
         check("a pinch (Ctrl+wheel) on the chat makes the chat text larger, and does not zoom the PDF",
-              float(pg.evaluate(CZOOM)) > 1.2 and pg.evaluate("() => S.scale") == zoom0)
+              float(pg.evaluate(CZOOM)) > 1.2 and pg.evaluate("() => pv.scale") == zoom0)
         pg.locator("#chatText").focus()
         pg.keyboard.press("Control+Digit0")
         pg.wait_for_timeout(400)
@@ -634,8 +638,13 @@ try:
         # --- the sandbox of a proposal: pdfview try N FILE opens copies of the PDF and its comments in the server of
         # the worktree of note N, on port 8900+N. Here the "worktree" is a link to this pdfview.
         wt = tmp / "wt"
-        (wt / "note-pdfview-97").mkdir(parents=True)
-        (wt / "note-pdfview-97" / "pdfview").symlink_to(HERE.parent)
+        app_parent = wt / "note-pdfview-97"
+        top = subprocess.run(["git", "-C", str(HERE.parent), "rev-parse", "--show-toplevel"],
+                             capture_output=True, text=True).stdout.strip()
+        if top and Path(top).resolve() != HERE.parent.resolve():  # pdfview is a folder of the repository viewers
+            app_parent = app_parent / Path(top).name
+        app_parent.mkdir(parents=True)
+        (app_parent / "pdfview").symlink_to(HERE.parent)
         before = side.read_text()
         tenv = {**env, "VIEWKIT_WT": str(wt)}
         r = subprocess.run([sys.executable, PDFVIEW, "try", "97", str(pdf), "--no-open"], env=tenv, capture_output=True, text=True)

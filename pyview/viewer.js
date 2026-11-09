@@ -193,7 +193,7 @@ let mathQueue = Promise.resolve();
 function typesetMath(roots) {
   roots = roots.filter(r => /\$|\\\(|\\\[/.test(r.textContent));
   if (!roots.length) return;
-  if (window.MathJax && MathJax.typesetPromise) { mathQueue = mathQueue.then(() => MathJax.typesetPromise(roots)).catch(() => {}); return; }
+  if (window.MathJax && MathJax.typesetPromise) { mathQueue = mathQueue.then(() => { kit.mathPrune(); return MathJax.typesetPromise(roots); }).catch(() => {}); return; }  // mathPrune: no old maths kept in memory
   if (window.MathJax) return;  // still loading; its startup typesets the page
   window.MathJax = {tex: {inlineMath: [['$', '$'], ['\\(', '\\)']], displayMath: [['$$', '$$'], ['\\[', '\\]']], processEscapes: true},
     options: {enableMenu: false, skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']}};
@@ -999,6 +999,8 @@ kit.previewBand({
 
 const chat = kit.chatPanel({
   key: 'pyview',
+  account: {get: () => api('GET', '/api/account?f=' + encodeURIComponent(FILE)),
+            post: body => api('POST', '/api/account', body)},
   empty: 'Ask about this notebook. Claude can read it, change cells, and run them. ' +
     'It runs on the computer that serves this page. Turn on "Ask only" if it must not change anything.',
   get: () => api('GET', `/api/chat?f=${enc(FILE)}`),

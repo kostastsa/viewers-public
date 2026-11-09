@@ -4,4 +4,4 @@
 # unless you choose Change All… The builder is shared: ../../viewkit/app/build.sh. Run again to rebuild.
 exec "${PAGEVIEW_KIT:-$(dirname "$0")/../../viewkit}/app/build.sh" pageview page 'Page or data file' \
   net.daringfireball.markdown,public.comma-separated-values-text,public.tab-separated-values-text,public.json \
-  md markdown csv tsv json
+  md markdown csv tsv json "$@"
