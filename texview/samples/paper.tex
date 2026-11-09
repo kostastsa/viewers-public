@@ -1,0 +1,45 @@
+% !TEX program = pdflatex
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{hyperref}
+\newtheorem{theorem}{Theorem}
+
+\title{A Short Note on Gaussian Sums}
+\author{A. Author}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+We study a mixture of Gaussian densities and show that the bound is tight
+for all $n$. This note is a sample document for texview.
+\end{abstract}
+
+\section{Introduction}
+\label{sec:intro}
+A Gaussian sum approximates a density $p(x)$ by a weighted sum of normal
+densities \cite{alspach1972}. The weights are positive and sum to one.
+
+\section{Main result}
+Let $w_i \ge 0$ with $\sum_i w_i = 1$. Then
+\begin{equation}
+  p(x) \approx \sum_{i=1}^{n} w_i \, \mathcal{N}(x; \mu_i, \Sigma_i).
+  \label{eq:sum}
+\end{equation}
+
+\begin{theorem}
+The error of \eqref{eq:sum} goes to zero as $n \to \infty$.
+\end{theorem}
+
+\begin{proof}
+See Section~\ref{sec:intro} and the references therein.
+\end{proof}
+
+\section{Conclusion}
+The bound is tight for all $n$, and the method is simple to use.
+
+\bibliographystyle{plain}
+\bibliography{paper}
+\end{document}
