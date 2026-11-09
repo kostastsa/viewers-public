@@ -9,6 +9,7 @@ Local viewers for documents, code and data, made to work with [Claude Code](http
 | [`pdfview`](pdfview) | PDF files. The PDF does not change. | A JSON file next to the PDF. Claude replies in each thread. |
 | [`pageview`](pageview) | Rich pages: Markdown with tables, charts and figures from CSV or JSON files | A JSON file next to the page. |
 | [`plateview`](plateview) | Plates: HTML pages that Claude writes, which show live data files | In the folder of the plate. They go when the plate goes. |
+| [`texview`](texview) | LaTeX documents (`.tex`): the source next to the PDF, with SyncTeX | A JSON file in `.texview/` next to the main file. Claude replies in each thread and suggests changes that you accept or reject. |
 | [`viewkit`](viewkit) | The code that the viewers share, the Claude Code skills, and the installer | |
 
 Each viewer runs a small local server and opens a page in your browser. The viewers use the Python standard library only.
@@ -25,11 +26,11 @@ git clone https://github.com/kostastsa/viewers-public ~/tools/viewers
 The script does these steps:
 
 1. It links `~/tools/APP` to each folder, because the skills use these paths.
-2. It links the commands `mdview`, `pyview`, `pdfview`, `pageview` and `plateview` into `~/.local/bin`.
+2. It links the commands `mdview`, `pyview`, `pdfview`, `pageview`, `plateview` and `texview` into `~/.local/bin`.
 3. It links the Claude Code skills into `~/.claude/skills/`.
 4. It builds the macOS apps that open files from Finder.
 5. It builds the shared Python interpreter of pyview (numpy, pandas, matplotlib and other packages).
-6. It tells you which external tools it cannot find: pandoc (mdview, pageview), poppler (pdfview), Claude Code (the chat and the Oracle button), and `gh` (optional).
+6. It tells you which external tools it cannot find: pandoc (mdview, pageview), poppler (pdfview), latexmk (texview), Claude Code (the chat and the Oracle button), and `gh` (optional).
 
 You can run it again. It changes only what is not correct. Run `~/tools/viewers/install.sh --help` for the options.
 
@@ -40,6 +41,7 @@ mdview notes.md
 pyview analysis.py
 pdfview paper.pdf
 pageview results/page.md
+texview paper.tex
 ```
 
 The command opens the browser. In the page, select text to comment on it. To get answers from Claude, click the Oracle button or open the chat. You can also use the skills in Claude Code:
@@ -51,6 +53,7 @@ The command opens the browser. In the page, select text to comment on it. To get
 | `/answer-pdf FILE.pdf` | Answer the comments on a PDF (pdfview) |
 | `/answer-page FILE.md` | Answer the comments on a page (pageview) |
 | `/answer-plate ID` | Answer the comments on a plate (plateview) |
+| `/answer-tex FILE.tex` | Answer the comments on a LaTeX document, and suggest changes (texview) |
 | `/page` | Make a pageview page from your data |
 | `/plate` | Make a plate from your data files |
 | `/improve APP` | Work on the notes to a viewer (see Improve the viewers) |

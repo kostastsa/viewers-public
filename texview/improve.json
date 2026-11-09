@@ -1,0 +1,17 @@
+{
+  "app": "texview",
+  "port_env": "TEXVIEW_PORT",
+  "claude_env": "TEXVIEW_CLAUDE",
+  "tests": [
+    "python3 tests/test_ops.py",
+    "uv run --with playwright python tests/browser_test.py"
+  ],
+  "companions": [
+    ".texview/{name}.json",
+    "paper.bib"
+  ],
+  "default_file": "samples/paper.tex",
+  "samples": [
+    "samples/paper.tex"
+  ]
+}

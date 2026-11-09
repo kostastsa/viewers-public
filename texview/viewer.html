@@ -1,0 +1,347 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>texview</title>
+<link rel="icon" type="image/png" href="/kit/icons/tex.png">
+<link rel="stylesheet" href="/kit/kit.css">
+<link rel="stylesheet" href="/kit/pdfpages.css">
+<link rel="stylesheet" href="/vendor/codemirror/lib/codemirror.css">
+<link rel="stylesheet" href="/vendor/codemirror/addon/hint/show-hint.css">
+<style>
+:root{color-scheme:dark;--bg:#111214;--fg:#d6d9de;--muted:#80858d;--panel:#16181b;--border:#2a2d32;--accent:#8a9bd6;
+  --warn:#e0876a;--ok:#5aa877;--code:#1b1d21;--hl:#2b3350;--mark:rgba(255,200,60,.22);--mark-active:rgba(255,170,30,.45);
+  --old:rgba(230,90,80,.28);--new:rgba(80,190,110,.25);--newfg:#8fd8a2;--oldfg:#f0a197;
+  --desk:#0b0c0d;--ui:system-ui,-apple-system,"Segoe UI",sans-serif;--mono:ui-monospace,"SF Mono",Menlo,monospace;
+  --t-tag:#8fb3ff;--t-bracket:#c9a2ff;--t-keyword:#f0c674;--t-comment:#6f7782;--t-atom:#7fd1c3;--t-err:#ff7b72;--t-var:#e6a07a}
+@media (prefers-color-scheme:light){:root{color-scheme:light;--bg:#fafaf7;--fg:#222;--muted:#777;--panel:#f1f0ea;
+  --border:#dcdad0;--accent:#2f5fc4;--warn:#b5482a;--ok:#2e8a52;--code:#ecebe4;--hl:#dfe6f7;--mark:rgba(255,200,0,.3);
+  --mark-active:rgba(255,150,0,.45);--old:rgba(220,60,50,.18);--new:rgba(40,160,70,.18);--newfg:#1d7a3a;--oldfg:#a8322a;
+  --desk:#d9d8d2;--t-tag:#2457c5;--t-bracket:#7a3fc0;--t-keyword:#9a6a00;--t-comment:#8a8f96;--t-atom:#0f7c6c;--t-err:#c62828;--t-var:#a5531f}}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font:13px/1.45 var(--ui);display:flex;flex-direction:column;overflow:hidden}
+button{font:inherit;background:none;color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:2px 8px;cursor:pointer}
+button:hover{border-color:var(--accent);color:var(--accent)}
+button:disabled{opacity:.45;cursor:default;border-color:var(--border);color:var(--fg)}
+button.on{border-color:var(--accent);color:var(--accent)}
+a{color:var(--accent)}
+select{font:inherit;background:var(--code);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:1px 4px;min-width:0}
+
+/* ----- header ----- */
+header{display:flex;gap:8px;align-items:center;padding:6px 12px;border-bottom:1px solid var(--border);background:var(--panel);
+  white-space:nowrap;min-height:40px}
+header #home{color:var(--muted);text-decoration:none;font-weight:600}
+header #name{font-weight:600;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:0 1 auto}
+header #dirLink{color:var(--muted);text-decoration:none}
+header .grow{flex:1}
+header .grp{display:flex;gap:4px;align-items:center}
+#pageNum{width:44px;text-align:right;background:var(--code);color:var(--fg);border:1px solid var(--border);border-radius:4px;
+  padding:1px 4px;font:inherit}
+#zoomLabel{min-width:44px;text-align:center;color:var(--muted)}
+#live{width:8px;height:8px;border-radius:50%;background:#5a9;display:inline-block}
+#live.off{background:var(--warn)}
+#buildBtn{display:inline-flex;gap:6px;align-items:center}
+#buildBtn .dot{width:8px;height:8px;border-radius:50%;background:var(--muted)}
+#buildBtn.ok .dot{background:var(--ok)}
+#buildBtn.error .dot,#buildBtn.failed .dot{background:var(--warn)}
+#buildBtn.error,#buildBtn.failed{border-color:var(--warn);color:var(--warn)}
+#buildBtn.running .dot{background:var(--accent);animation:pulse 1s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.25}}
+
+/* ----- layout: source | contents | pages | sidebar ----- */
+main{flex:1;display:flex;min-height:0}
+#src{flex:0 0 var(--src-w,42%);min-width:240px;display:flex;flex-direction:column;border-right:1px solid var(--border);background:var(--bg)}
+body.nosrc #src,body.nosrc #split{display:none}
+#split{flex:0 0 5px;cursor:col-resize;background:var(--border);opacity:.5}
+#split:hover,#split.drag{background:var(--accent);opacity:1}
+#pages{flex:1;min-width:200px}
+aside{flex:0 0 320px;border-left:1px solid var(--border);overflow:auto;padding:8px 10px 20px;background:var(--panel);min-width:0}
+body.noside aside{display:none}
+body.noside.chatopen aside{display:block}
+nav{flex:0 0 220px;border-right:1px solid var(--border);overflow:auto;padding:8px 6px;background:var(--panel);min-width:0}
+body.nonav nav{display:none}
+nav h4{margin:4px 6px 8px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+
+/* ----- the source pane ----- */
+.srcbar{display:flex;gap:6px;align-items:center;padding:5px 8px;border-bottom:1px solid var(--border);background:var(--panel);white-space:nowrap}
+.srcbar select{flex:0 1 auto;max-width:60%}
+.srcbar .grow{flex:1}
+.srcbar #dirty{color:var(--warn);font-size:16px;line-height:1;visibility:hidden}
+.srcbar #dirty.on{visibility:visible}
+#editor{flex:1;min-height:0;position:relative}
+#editor .CodeMirror{position:absolute;inset:0;height:auto;font:calc(13px * var(--src-zoom,1))/1.5 var(--mono);background:var(--bg);color:var(--fg)}
+.CodeMirror-gutters{background:var(--panel);border-right:1px solid var(--border)}
+.CodeMirror-linenumber{color:var(--muted)}
+.CodeMirror-cursor{border-left:2px solid var(--accent)}
+.CodeMirror-selected{background:rgba(120,150,230,.22)!important}
+.CodeMirror-focused .CodeMirror-selected{background:rgba(120,150,230,.32)!important}
+.CodeMirror-activeline-background{background:rgba(128,128,128,.08)}
+.CodeMirror-matchingbracket{color:var(--accent)!important;text-decoration:underline}
+.cm-s-default .cm-tag{color:var(--t-tag)}
+.cm-s-default .cm-bracket{color:var(--t-bracket)}
+.cm-s-default .cm-keyword{color:var(--t-keyword)}
+.cm-s-default .cm-comment{color:var(--t-comment);font-style:italic}
+.cm-s-default .cm-atom,.cm-s-default .cm-number{color:var(--t-atom)}
+.cm-s-default .cm-error{color:var(--t-err)}
+.cm-s-default .cm-variable-2{color:var(--t-var)}
+.cm-searching{background:var(--mark)}
+/* the popup of suggestions in the editor (show-hint) */
+.CodeMirror-hints{z-index:35;background:var(--panel);border-color:var(--border);font:12px/1.5 var(--mono);max-width:min(560px,90vw)}
+.CodeMirror-hint{display:flex;justify-content:space-between;gap:18px;color:var(--fg)}
+li.CodeMirror-hint-active{background:var(--accent);color:var(--bg)}
+.tv-hint-num{color:var(--muted)}
+li.CodeMirror-hint-active .tv-hint-num{color:inherit}
+/* the find bar of the editor: Find, then Replace (⌘/Ctrl+F) */
+#findbar{display:flex;flex-direction:column;gap:4px;padding:5px 8px;border-bottom:1px solid var(--border);background:var(--panel)}
+#findbar[hidden]{display:none}
+#findbar div{display:flex;gap:6px;align-items:center;white-space:nowrap}
+#findbar input{flex:1;min-width:0;font:12px/1.4 var(--mono);background:var(--code);color:var(--fg);border:1px solid var(--border);
+  border-radius:4px;padding:2px 6px}
+#findbar input.none{border-color:var(--warn)}
+#findN{color:var(--muted);font-size:12px;min-width:4.5em;text-align:right}
+body.cmdown #editor .CodeMirror-lines,body.cmdown #pages :is(.page,.textLayer,.textLayer span,.textLayer br){cursor:pointer}
+/* marks in the source: a comment, a suggested change (the old text and the new text after it), a line from the PDF */
+.tv-comment{background:var(--mark);border-bottom:1px solid rgba(240,160,20,.7);cursor:pointer}
+.tv-comment.active{background:var(--mark-active)}
+.tv-chg{cursor:pointer;border-bottom:1px dashed rgba(80,170,100,.6)}
+.tv-chg.active{background:rgba(120,150,230,.12)}
+.tv-old{background:var(--old);text-decoration:line-through;text-decoration-color:var(--oldfg);cursor:pointer}
+.tv-old.active{outline:1px solid var(--warn)}
+.tv-new{background:var(--new);color:var(--newfg);white-space:pre-wrap;border-radius:2px;padding:0 1px;cursor:pointer}
+.tv-acts{display:inline-flex;gap:2px;margin-left:3px;vertical-align:1px}
+.tv-acts button{font:600 10px/14px var(--ui);padding:0 5px;border-radius:7px}
+.tv-acts .yes{border-color:var(--ok);color:var(--ok)}
+.tv-acts .no{border-color:var(--warn);color:var(--warn)}
+.tv-flash{animation:lineflash 1.6s ease-out}
+@keyframes lineflash{0%,40%{background:rgba(255,190,40,.4)}100%{background:transparent}}
+.tv-errline{background:rgba(230,90,80,.12)}
+.tv-gut{width:8px;height:8px;border-radius:50%;background:var(--warn);margin:5px 0 0 2px}
+.tv-gut.warn{background:#d9a634}
+.CodeMirror-gutter.tv-marks{width:12px}
+/* the problems of the compile, under the editor */
+#problems{max-height:30%;overflow:auto;border-top:1px solid var(--border);background:var(--panel);font-size:12px}
+#problems[hidden]{display:none}
+#problems .ph{display:flex;gap:6px;align-items:center;padding:4px 8px;color:var(--muted);position:sticky;top:0;background:var(--panel)}
+#problems .ph .grow{flex:1}
+#problems .p{display:flex;gap:6px;padding:2px 8px;cursor:pointer;align-items:baseline}
+#problems .p:hover{background:var(--hl)}
+#problems .p .k{font-size:10px;border-radius:7px;padding:0 5px;border:1px solid var(--warn);color:var(--warn);flex:none}
+#problems .p.warn .k{border-color:#d9a634;color:#d9a634}
+#problems .p .w{color:var(--muted);white-space:nowrap;flex:none}
+#problems .p .m{overflow-wrap:anywhere}
+#problems pre{margin:0;padding:6px 8px;font:11px/1.4 var(--mono);white-space:pre-wrap;color:var(--muted)}
+.srcempty{padding:30px;color:var(--muted);line-height:1.6}
+
+/* ----- the pages (pdfpages.css), and the marks of texview on them ----- */
+#pages .marks div.cm{background:var(--mark);border-radius:2px;pointer-events:auto;cursor:pointer}
+.page .marks div.sync{pointer-events:none}
+#pages .loadmsg{padding:40px;color:var(--muted);font-size:14px;line-height:1.6}
+
+/* ----- the bar on a PDF selection ----- */
+#selbar,#edsel{position:fixed;z-index:30;display:none;gap:4px}
+#selbar button,#edsel button{background:var(--panel);border:1px solid var(--accent);color:var(--accent);border-radius:14px;
+  padding:3px 10px;box-shadow:0 3px 12px rgba(0,0,0,.4)}
+
+/* ----- the sidebar: comments and suggested changes ----- */
+aside h4{margin:4px 6px 8px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);display:flex;align-items:center;gap:6px}
+aside .empty{color:var(--muted);padding:6px;line-height:1.5}
+.stools{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 10px}
+.stools .grow{flex:1}
+.stools button{white-space:nowrap;font-size:12px;padding:2px 9px}
+.stools button[hidden]{display:none}
+.thread{border:1px solid var(--border);border-radius:6px;padding:7px 9px;margin:0 0 8px;background:var(--bg);cursor:pointer}
+.thread.active{border-color:var(--accent)}
+.thread .top{display:flex;gap:6px;align-items:baseline;margin-bottom:4px}
+.thread .where{color:var(--muted);font-size:11px;white-space:nowrap;font-family:var(--mono)}
+.thread q{color:var(--muted);font-style:italic;flex:1;min-width:0;display:-webkit-box;-webkit-line-clamp:2;
+  -webkit-box-orient:vertical;overflow:hidden}
+.thread q::before,.thread q::after{content:none}
+.thread .gen{flex:1;color:var(--muted)}
+.thread .sp{flex:1}
+.diff{font:12px/1.45 var(--mono);border-radius:4px;overflow:hidden;margin:2px 0 6px;border:1px solid var(--border)}
+.diff div{padding:3px 6px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:12em;overflow:auto;background:var(--code)}
+.diff del{background:var(--old);color:var(--oldfg);text-decoration:line-through;text-decoration-color:rgba(200,80,70,.7)}
+.diff ins{background:var(--new);color:var(--newfg);text-decoration:none}
+.diff .dnote{font-style:italic;color:var(--muted)}
+.pill{font-size:10px;border-radius:8px;padding:0 6px;border:1px solid var(--border);color:var(--muted);white-space:nowrap}
+.pill.open{border-color:var(--accent);color:var(--accent)}
+.pill.change{border-color:var(--ok);color:var(--ok)}
+.pill.lost{border-color:var(--warn);color:var(--warn)}
+.msg{padding:3px 0;border-top:1px dashed var(--border);position:relative}
+.msg:first-of-type{border-top:0}
+.msg .who{font-size:11px;color:var(--muted);display:flex;gap:6px;align-items:center}
+.msg .who b{color:var(--fg);font-weight:600}
+.msg.claude .who b{color:var(--accent)}
+.msg .acts{margin-left:auto;display:none;gap:4px}
+.msg:hover .acts{display:flex}
+.msg .acts button,.thread .tacts button{font-size:11px;padding:0 6px}
+.thread .tacts .yes{border-color:var(--ok);color:var(--ok)}
+.thread .tacts .no{border-color:var(--warn);color:var(--warn)}
+.msg .md p{margin:.2em 0}
+.msg .md pre,.cm .md pre{background:var(--code);padding:5px 7px;overflow:auto;font-size:12px;margin:.3em 0}
+.md code{font:.92em var(--mono);background:var(--code);padding:0 .25em;border-radius:3px}
+.md pre code{background:none;padding:0}
+.md ul,.md ol{margin:.3em 0;padding-left:1.4em}
+.md h4{margin:.5em 0 .2em;font-size:1em}
+.md mjx-container{white-space:nowrap}
+.md mjx-container[display="true"]{margin:.4em 0!important;overflow-x:auto;overflow-y:hidden;max-width:100%}
+.thread .tacts{display:flex;gap:4px;margin-top:5px}
+.composer{margin:4px 0 8px}
+.composer .cwhere{color:var(--muted);font-size:11px;margin-bottom:4px;font-family:var(--mono)}
+.composer textarea{width:100%;min-height:64px;resize:vertical;background:var(--code);color:var(--fg);border:1px solid var(--border);
+  border-radius:4px;padding:5px 7px;font:13px/1.45 var(--ui);outline:none}
+.composer textarea:focus{border-color:var(--accent)}
+.composer .row{display:flex;gap:6px;justify-content:flex-end;margin-top:4px}
+.composer .row .hint{margin-right:auto;color:var(--muted);font-size:11px;align-self:center}
+/* the comment box of a new comment: next to the selected text, in the source or on a page */
+#pop{position:fixed;z-index:31;width:min(340px,calc(100vw - 16px));margin:0;padding:8px;background:var(--panel);
+  border:1px solid var(--accent);border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,.45);box-sizing:border-box}
+
+/* ----- the Oracle ----- */
+#oracleBtn.busy{border-color:var(--accent);color:var(--accent);background:var(--hl)}
+.crow{color:var(--muted);font-size:11px;margin:-4px 6px 8px}
+button.link{border:0;padding:0;color:var(--accent);text-decoration:underline;font-size:inherit}
+#reportDlg{background:var(--panel);color:var(--fg);border:1px solid var(--border);border-radius:8px;max-width:min(760px,90vw);padding:12px}
+#reportDlg::backdrop{background:rgba(0,0,0,.5)}
+#reportText{white-space:pre-wrap;max-height:60vh;overflow:auto;font:12px/1.45 var(--mono);margin:0 0 10px}
+#reportDlg .acts{display:flex;justify-content:flex-end}
+
+/* ----- toast ----- */
+#toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:60;display:flex;flex-direction:column;gap:6px;align-items:center}
+.toast{background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:6px 12px;box-shadow:0 4px 18px rgba(0,0,0,.4);
+  display:flex;gap:10px;align-items:center;max-width:min(560px,90vw)}
+.toast button{border:0;color:var(--accent);text-decoration:underline;padding:0}
+
+/* ----- chat (bottom right) ----- */
+#chat{position:fixed;right:16px;bottom:16px;z-index:40;font-size:12px}
+#chatOpen{border:1px solid var(--accent);color:var(--accent);background:var(--bg);border-radius:18px;padding:6px 16px;box-shadow:0 4px 18px #0005}
+#chatOpen[hidden],#chatBox[hidden]{display:none}
+#chatBox{width:var(--kit-chat-w,min(300px,calc(100vw - 32px)));
+  height:var(--kit-chat-h,min(62vh,540px));display:flex;flex-direction:column;background:var(--panel);
+  border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 32px #0007;overflow:hidden}
+.chatHead{display:flex;gap:8px;align-items:center;padding:6px 10px;border-bottom:1px solid var(--border);color:var(--muted)}
+.chatHead b{color:var(--fg)}
+.chatHead .grow{flex:1}
+.chatHead button{padding:0 8px}
+#chatMsgs{flex:1;overflow-y:auto;padding:8px 10px;display:flex;flex-direction:column;gap:8px}
+.cm{max-width:94%;overflow-wrap:anywhere;min-width:0}
+.cm.user{align-self:flex-end;background:var(--hl);border-radius:8px 8px 2px 8px;padding:5px 9px;white-space:pre-wrap}
+.cm.assistant{align-self:flex-start}
+.cm .cq{color:var(--muted);font-style:italic;border-left:2px solid var(--accent);padding-left:6px;margin-bottom:4px;
+  display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.cm .md{font:13px/1.5 var(--ui)}
+.cm .md p{margin:.3em 0}
+.ctool{color:var(--muted);font-size:11px;padding:1px 0;overflow-wrap:anywhere}
+.cerr{color:var(--warn);margin-top:3px}
+.cfoot{color:var(--muted);font-size:10px;margin-top:2px}
+.cempty{color:var(--muted);padding:12px 4px;line-height:1.5}
+.chatCtx{display:flex;gap:6px;align-items:center;padding:3px 10px;min-height:22px;color:var(--muted)}
+.chatCtx .grow{flex:1}
+.chatCtx label{display:flex;gap:4px;align-items:center;cursor:pointer;white-space:nowrap}
+.chatCtx .chip{border:1px solid var(--border);border-radius:10px;padding:0 4px 0 9px;display:inline-flex;gap:4px;align-items:center;
+  max-width:170px;min-width:0}
+.chatCtx .chip span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chatCtx .chip button{border:0;color:var(--muted);padding:0 4px}
+#chatCtx{min-width:0;overflow:hidden}
+.chatIn{display:flex;gap:6px;padding:6px 10px 10px;border-top:1px solid var(--border)}
+.chatIn textarea{flex:1;resize:none;height:54px;background:var(--code);color:var(--fg);border:1px solid var(--border);border-radius:4px;
+  padding:5px 8px;font:12px/1.45 var(--ui);outline:none}
+.chatIn textarea:focus{border-color:var(--accent)}
+.chatIn button{border-color:var(--accent);color:var(--accent);padding:0 12px}
+.chatIn button.stop{border-color:var(--warn);color:var(--warn)}
+body.chatopen aside{padding-bottom:calc(var(--kit-chat-h,min(62vh,540px)) + 40px)}
+@media (max-width:900px){aside,nav{display:none!important}#src{flex-basis:50%}}
+</style>
+</head>
+<body class="nonav">
+<header>
+  <a href="/" id="home" title="Files">texview</a>
+  <a id="dirLink" href="#" title="The folder of this document" hidden>📁</a>
+  <span id="name"></span>
+  <button id="buildBtn" type="button" title="Compile now (⌘/Ctrl+Shift+B)"><span class="dot"></span><span id="buildLabel">…</span></button>
+  <span class="grow"></span>
+  <span class="grp"><input id="pageNum" type="text" inputmode="numeric" title="Go to page" value="1"><span id="pageCount">/ –</span></span>
+  <span class="grp">
+    <button id="zoomOut" type="button" title="Zoom out (Option+- or -)">−</button>
+    <span id="zoomLabel">100%</span>
+    <button id="zoomIn" type="button" title="Zoom in (Option+= or +)">+</button>
+    <button id="zoomFit" type="button" title="Fit the page width (Option+0 or 0)">Fit</button>
+  </span>
+  <button id="darkBtn" type="button" title="Dark pages: text and lines dark, images in their colors (d)">◐ Dark</button>
+  <button id="undoBtn" type="button" title="Undo the last change to the comments or the last Accept" disabled>Undo</button>
+  <button id="navBtn" type="button" title="Contents of the PDF (⌘/Ctrl+E or o)">☰</button>
+  <button id="srcBtn" type="button" title="Show or hide the source (Control+S on a Mac, Option+Tab or e)">Source</button>
+  <button id="sideBtn" type="button" title="Hide the comments (⌘/Ctrl+D or ⌘/Ctrl+\)">Comments</button>
+  <span id="live" title="Connected to the server"></span>
+</header>
+<main>
+  <section id="src">
+    <div class="srcbar">
+      <select id="fileSel" title="The source files: the main file, then the files that the compile reads"></select>
+      <span id="dirty" title="Unsaved changes">●</span>
+      <span class="grow"></span>
+      <button id="syncBtn" type="button" title="Show this line in the PDF (or ⌘/Ctrl+click a line)">→ PDF</button>
+      <button id="saveBtn" type="button" title="Save all changed files and compile (⌘/Ctrl+S in the source)">Save</button>
+    </div>
+    <div id="findbar" hidden>
+      <div><input id="findQ" type="text" placeholder="Find" spellcheck="false" autocomplete="off" title="Enter: next. Shift+Enter: previous. Esc: close."><span id="findN"></span>
+        <button id="findPrev" type="button" title="The previous match (Shift+Enter, ⌘/Ctrl+Shift+G)">↑</button>
+        <button id="findNext" type="button" title="The next match (Enter, ⌘/Ctrl+G)">↓</button>
+        <button id="findClose" type="button" title="Close (Esc)">×</button></div>
+      <div><input id="replQ" type="text" placeholder="Replace with" spellcheck="false" autocomplete="off" title="Enter: replace this match and go to the next. Esc: close.">
+        <button id="replOne" type="button" title="Replace this match and go to the next (Enter in this field)">Replace</button>
+        <button id="replAll" type="button" title="Replace all the matches in this file (⌘/Ctrl+Z undoes it)">Replace all</button></div>
+    </div>
+    <div id="editor"></div>
+    <div id="problems" hidden></div>
+  </section>
+  <div id="split" title="Drag to resize. Double-click: the default size."></div>
+  <nav id="nav" class="kitContents"><h4>Contents</h4><div id="outline"><div class="empty">…</div></div></nav>
+  <div id="pages" class="kitPages" tabindex="0"><div class="loadmsg">Compiling…</div></div>
+  <aside id="side">
+    <h4><span id="counts">Comments</span></h4>
+    <div class="stools">
+      <button id="commentBtn" type="button" title="Comment on the selected text in the source (⌘/Ctrl+Shift+M), or on the whole document">+ Comment</button>
+      <button id="oracleBtn" type="button">Oracle</button>
+      <span class="grow"></span>
+      <button id="acceptAllBtn" type="button" title="Accept every suggested change" hidden>Accept all</button>
+      <button id="rejectAllBtn" type="button" title="Reject every suggested change (Undo brings them back)" hidden>Reject all</button>
+      <button id="resolveAllBtn" type="button" title="Remove every comment and suggested change (Undo brings them back)" hidden>Resolve all</button>
+    </div>
+    <div id="oracleRow" class="crow" hidden>Claude remembers earlier rounds on this document. <button id="newSession" type="button" class="link">New session</button></div>
+    <div id="threads"></div>
+  </aside>
+</main>
+<div id="selbar"><button id="cbtn" type="button" title="Comment on this place (⌘/Ctrl+Shift+M): the comment goes on its source line">💬 Comment</button><button id="srcbtn" type="button" title="Open the source at this place (or ⌘/Ctrl+click the page)">✎ Source</button></div>
+<div id="edsel"><button id="edcbtn" type="button" title="Comment on the selected text (⌘/Ctrl+Shift+M)">💬 Comment</button></div>
+<div id="chat">
+  <button id="chatOpen" type="button" title="Chat with Claude about this document (⌘/Ctrl+S)">Chat</button>
+  <section id="chatBox" hidden>
+    <div class="chatHead"><b>Chat</b><span class="grow"></span>
+      <button id="chatNew" type="button" title="Start a new conversation">New</button>
+      <button id="chatMin" type="button" title="Hide the chat">–</button></div>
+    <div id="chatMsgs"></div>
+    <div class="chatCtx"><span id="chatCtx"></span><span class="grow"></span>
+      <label title="Claude reads and answers. It does not suggest changes, and it does not add or answer comments."><input type="checkbox" id="chatAsk">Ask only</label></div>
+    <div class="chatIn"><textarea id="chatText" placeholder="Ask about this document…" title="Enter sends. Shift+Enter makes a new line."></textarea>
+      <button id="chatSend" type="button">Send</button></div>
+  </section>
+</div>
+<dialog id="reportDlg">
+  <form method="dialog"><pre id="reportText"></pre><div class="acts"><button value="ok">Close</button></div></form>
+</dialog>
+<div id="toast"></div>
+<script src="/kit/kit.js"></script>
+<script src="/kit/pdfpages.js"></script>
+<script src="/vendor/codemirror/lib/codemirror.js"></script>
+<script src="/vendor/codemirror/mode/stex/stex.js"></script>
+<script src="/vendor/codemirror/addon/search/searchcursor.js"></script>
+<script src="/vendor/codemirror/addon/edit/matchbrackets.js"></script>
+<script src="/vendor/codemirror/addon/selection/active-line.js"></script>
+<script src="/vendor/codemirror/addon/comment/comment.js"></script>
+<script src="/vendor/codemirror/addon/hint/show-hint.js"></script>
+<script src="/viewer.js"></script>
+</body>
+</html>
