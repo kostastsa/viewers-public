@@ -164,7 +164,7 @@ In the page, the user selects text and writes a comment. Then the user clicks th
 | `/answer-tex FILE.tex` | `texview` |
 | `/answer-plate ID` | `plateview` |
 
-The skills `/page` and `/plate` make a page or a plate from data files. The skill `/improve APP` works on the notes to a viewer. The `README.md` of each viewer gives the details and the security rules.
+The skills `/page` and `/plate` make a page or a plate from data files. The skill `/improve APP` works on the notes to a viewer. The `README.md` of each viewer gives the details and the security rules. The file `HOTKEYS.md` lists the keys.
 
 ## Updates
 
