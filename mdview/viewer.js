@@ -15,109 +15,82 @@ const PALETTES = HUES.map(h => {
   const pal = PALETTES[h % PALETTES.length];
   for (const k in pal) document.documentElement.style.setProperty('--' + k, pal[k]);
 })();
-// Watermark: figures from art/figures/ (manifest.json) down the left and right columns, drawn anew on every load as
-// binary drawings (f.line, or the silhouette f.mask) in the file's accent color. Each side gets a stack of single
-// organisms cut from the Kunstformen plates (the old cut-out figures when the manifest has none). Each
-// figure has one signed score, kept on the server: +1 per click, -1 per double click. Its weight is exp(0.5 * score),
-// the score limited to +-6, so liked figures come up more often and disliked ones rarely but not never.
-const ART = '/art/figures/', WM_STACK = 10, WM_MAXH = 300;  // WM_MAXH: the tallest a figure is drawn, in px
-(async () => {
-  try {
-    const get = async url => (await fetch(url)).json();
-    const [man, scores] = await Promise.all([get(ART + 'manifest.json'), get('/api/art/scores').catch(() => ({}))]);
-    const organisms = man.filter(f => f.kind === 'organism');
-    const figs = organisms.length ? organisms : man.filter(f => f.kind === 'figure');
-    const used = new Set();
-    const draw = (list, n) => {  // weighted draw without replacement
-      list = list.filter(f => !used.has(f.id));
-      const out = [];
-      while (out.length < n && list.length) {
-        const w = list.map(f => Math.exp(0.5 * Math.max(-6, Math.min(6, scores[f.id] || 0))));
-        let x = Math.random() * w.reduce((a, b) => a + b, 0), i = 0;
-        while (i < list.length - 1 && (x -= w[i]) >= 0) i++;
-        used.add(list[i].id);
-        out.push({f: list[i], s: scores[list[i].id] || 0});
-        list.splice(i, 1);
-      }
-      return out;
-    };
-    wmInit([draw(figs, WM_STACK), draw(figs, WM_STACK)]);
-  } catch (e) { /* no art folder: no watermark */ }
-})();
-
-function wmInit(sides) {
-  const pool = sides.flat();
-  const root = document.documentElement, tip = document.createElement('div');
-  tip.id = 'wmvote';
-  document.body.appendChild(tip);
-  for (const it of pool) {
-    it.el = document.createElement('div');
-    it.el.className = 'wmfig';
-    it.dx = 0.1 + 0.8 * Math.random();  // where it sits across the column
-    const url = `url(${ART}${it.f.line || it.f.mask})`;
-    it.el.style.setProperty('-webkit-mask-image', url);
-    it.el.style.setProperty('mask-image', url);
-    document.body.appendChild(it.el);
-  }
-  // Stack each side's figures from the top of its column, as many as fit.
-  const layout = () => {
-    const W = root.clientWidth, H = root.clientHeight;
-    const cols = [{x: 16, w: W > 1180 ? 220 : 180}, {x: W - 16 - 300, w: 300}];  // the grid columns of main
-    pool.forEach(it => it.el.hidden = true);
-    if (W <= 860) return;  // one column: no room beside the text
-    sides.forEach((items, c) => {
-      let y = 66;
-      for (const it of items) {
-        const k = Math.min((cols[c].w - 8) / it.f.w, WM_MAXH / it.f.h), w = it.f.w * k, h = it.f.h * k;
-        if (y + h > H - 8) break;
-        Object.assign(it.el.style, {left: cols[c].x + (cols[c].w - w) * it.dx + 'px',
-          top: y + 'px', width: w + 'px', height: h + 'px'});
-        it.el.hidden = false;
-        y += h + 28;
-      }
-    });
-  };
-  layout();
-  addEventListener('resize', layout);
-
-  // The figures sit behind the page, so they are hit-tested here: a click on the empty background over one is a
-  // +1, a double click -1. Hovering shows the figure's score in a small box by the cursor.
-  const hit = ev => {
-    const t = ev.target;
-    if (!(t === root || t === document.body || ['MAIN', 'ASIDE', 'NAV'].includes(t.tagName))) return null;
-    return pool.find(it => {
-      if (it.el.hidden) return false;
-      const r = it.el.getBoundingClientRect();
-      return ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom;
-    });
-  };
-  const signed = s => (s > 0 ? '+' : '') + s;
-  const vote = async (it, v) => {
-    try {
-      const r = await fetch('/api/art/vote', {method: 'POST', headers: {'Content-Type': 'application/json', 'X-MDView': '1'},
-        body: JSON.stringify({id: it.f.id, vote: v})});
-      if (!r.ok) throw new Error((await r.json()).error || r.statusText);
-      it.s = (await r.json()).score;
-      tip.textContent = signed(it.s);
-      tip.classList.add('flash');
-      setTimeout(() => tip.classList.remove('flash'), 1200);
-    } catch (e) { toast(e.message); }
-  };
-  let timer = 0;
-  document.addEventListener('mousemove', ev => {
-    const it = hit(ev);
-    document.body.classList.toggle('wm-hover', !!it);
-    if (it) tip.textContent = signed(it.s);
-    tip.style.left = Math.min(ev.clientX + 14, root.clientWidth - 60) + 'px';
-    tip.style.top = Math.min(ev.clientY + 14, root.clientHeight - 30) + 'px';
-  });
-  document.addEventListener('click', ev => {
-    const it = ev.button === 0 && hit(ev);
-    if (!it) return;
-    if (ev.detail === 1) timer = setTimeout(() => vote(it, 1), 260);  // wait: it may become a double click
-    else if (ev.detail === 2) { clearTimeout(timer); vote(it, -1); }
-  });
+// The fonts of the page (the Aa button in the header). The default is the look of pageview: sans text, serif headings,
+// and a sans interface. The choice is the same for all files (localStorage), and the color of each file stays.
+const FONT_KEY = 'mdview.fonts';
+const FONT_DEFAULT = {text: 'sans', head: 'serif', ui: 'sans', step: 0};
+let fonts = (() => { try { return {...FONT_DEFAULT, ...JSON.parse(localStorage.getItem(FONT_KEY) || '{}')}; } catch { return {...FONT_DEFAULT}; } })();
+function applyFonts() {
+  const r = document.documentElement;
+  r.dataset.text = fonts.text; r.dataset.head = fonts.head; r.dataset.ui = fonts.ui;
+  r.style.setProperty('--doc-step', fonts.step + 'px');
 }
+applyFonts();
+function fontMenu() {
+  const menu = $('fontMenu'), b = $('fontBtn');
+  if (!menu.hidden) { menu.hidden = true; return; }
+  const seg = (key, opts) => {
+    const s = document.createElement('span');
+    s.className = 'seg';
+    for (const [v, label, title] of opts) {
+      const x = document.createElement('button');
+      x.type = 'button'; x.textContent = label; x.title = title || '';
+      x.classList.toggle('on', fonts[key] === v);
+      x.onclick = () => { fonts[key] = v; if (key === 'text') fonts.step = 0; saveFonts(); fontMenu(); fontMenu(); };
+      s.append(x);
+    }
+    return s;
+  };
+  const row = (label, node) => { const l = document.createElement('span'); l.className = 'lab'; l.textContent = label; menu.append(l, node); };
+  menu.replaceChildren();
+  row('Text', seg('text', [['sans', 'Sans', 'System sans, as in pageview'], ['serif', 'Serif', 'Charter (the old look of mdview)'], ['mono', 'Mono']]));
+  row('Headings', seg('head', [['serif', 'Serif', 'Iowan Old Style, as in pageview'], ['text', 'As text']]));
+  row('Interface', seg('ui', [['sans', 'Sans', 'As in pageview'], ['mono', 'Mono', 'The old look of mdview']]));
+  const size = document.createElement('span'); size.className = 'seg';
+  const step = d => () => { fonts.step = Math.max(-4, Math.min(8, fonts.step + d)); saveFonts(); fontMenu(); fontMenu(); };
+  const cur = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--doc-size')) + fonts.step;
+  size.append(Object.assign(document.createElement('button'), {type: 'button', textContent: 'A−', title: 'Smaller', onclick: step(-1)}),
+    Object.assign(document.createElement('button'), {type: 'button', textContent: cur + ' px', title: 'The default size of this font', onclick: () => { fonts.step = 0; saveFonts(); fontMenu(); fontMenu(); }}),
+    Object.assign(document.createElement('button'), {type: 'button', textContent: 'A+', title: 'Larger', onclick: step(1)}));
+  row('Size', size);
+  const reset = document.createElement('button');
+  reset.type = 'button'; reset.className = 'link'; reset.textContent = 'Default (as pageview)';
+  reset.onclick = () => { fonts = {...FONT_DEFAULT}; saveFonts(); fontMenu(); fontMenu(); };
+  const note = document.createElement('span'); note.className = 'note';
+  note.append('For all files. The color of each file stays. ', reset);
+  menu.append(note);
+  const r = b.getBoundingClientRect();
+  menu.hidden = false;
+  menu.style.top = r.bottom + 6 + 'px';
+  menu.style.left = Math.max(8, Math.min(r.right - menu.offsetWidth, innerWidth - menu.offsetWidth - 8)) + 'px';
+}
+function saveFonts() {
+  applyFonts();
+  try { localStorage.setItem(FONT_KEY, JSON.stringify(fonts)); } catch { /* not kept */ }
+}
+$('fontBtn').onclick = e => { e.stopPropagation(); fontMenu(); };
+$('fontMenu').addEventListener('click', e => e.stopPropagation());  // the menu draws itself again on a click
+document.addEventListener('click', e => { if (!$('fontMenu').hidden && !e.target.closest('#fontMenu')) $('fontMenu').hidden = true; });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('fontMenu').hidden) $('fontMenu').hidden = true; });
+
+// Watermark: figures from art/figures/ down the left and right columns, in the accent color of the file (kit.watermark,
+// viewkit/artkit.py). A click on a figure is +1, a double click -1. The columns are the grid columns of main.
+kit.watermark({
+  cols: () => {
+    const W = document.documentElement.clientWidth;
+    if (W <= 860) return null;  // one column: no room beside the text
+    return [{x: 16, w: W > 1180 ? 220 : 180}, {x: W - 16 - 300, w: 300}];
+  },
+  isBg: t => t === document.documentElement || t === document.body || ['MAIN', 'ASIDE', 'NAV'].includes(t.tagName),
+  post: async body => {
+    const r = await fetch('/api/art/vote', {method: 'POST', headers: {'Content-Type': 'application/json', 'X-MDView': '1'},
+      body: JSON.stringify(body)});
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || r.statusText);
+    return d;
+  },
+  toast: m => toast(m),
+});
 const docEl = $('doc'), threadsEl = $('threads'), fab = $('fab'), dlg = $('dlg'), ta = $('ta');
 const INLINE = new Set(['SPAN','A','EM','STRONG','CODE','SUP','SUB','DEL','S','U','MARK','Q','SMALL','ABBR','B','I','KBD','INS']);
 const BLOCK_SEL = 'p,li,h1,h2,h3,h4,h5,h6,td,th,dt,dd,figcaption,caption';
@@ -204,6 +177,7 @@ function renderDoc() {
     docEl.prepend(h);
   }
   fixLinks();
+  enrichDoc();
   lineStarts = [0];
   for (let i = 0; i < state.clean.length; i++) if (state.clean[i] === '\n') lineStarts.push(i + 1);
   buildIndex();
@@ -371,6 +345,335 @@ function lowerBound(offs, x) {
   return lo;
 }
 
+// ------------------------------------------------------------ rich blocks and tables
+// The blocks of viewkit/components.js (callout, stats, columns, tabs, toggle, figures, code with Copy, and .table or
+// .chart blocks that read a CSV or JSON file) move the nodes of pandoc, so every word keeps its source position and
+// the comments and changes stay on it. A Markdown table stays the table of pandoc (keepTables): mdTables puts it in a
+// card with a toolbar, aligns the number columns, and sorts the rows of the view. The file never changes for that.
+const enc = encodeURIComponent;
+function enrichDoc() {
+  if (typeof PV !== 'undefined') {
+    PV.enhance(docEl, {
+      file: FILE, keepTables: true, widgets: false, theme: () => 'dark', toast: m => toast(m),
+      data: async src => {
+        const r = await fetch(`/api/data?f=${enc(FILE)}&src=${enc(src)}`);
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(d.error || r.statusText);
+        return d;
+      },
+    }).catch(e => toast(e.message));
+  }
+  mdTables();
+}
+
+const tableSort = new Map();  // the number of a table on the page -> {col, dir}: the sort of the view only
+const cellText = c => { const x = c.cloneNode(true); x.querySelectorAll('.srt, .pv-ui, button.pin').forEach(b => b.remove()); return x.textContent.trim(); };
+function mdTables() {
+  let n = 0;
+  for (const t of [...docEl.querySelectorAll('table')]) {
+    if (t.closest('.pv-gen, .pv-table, .pv-grid, .tedit, .mdt')) continue;
+    const k = ++n, top = t.parentElement === docEl, host = t.closest('div.table');
+    const w = el('div', 'mdt'), bar = el('div', 'mdt-bar pv-ui'), sc = el('div', 'mdt-scroll');
+    if (top && t.dataset.pos) w.dataset.pos = t.dataset.pos;  // the block buttons (edit, delete, add) go on the card
+    t.replaceWith(w);
+    sc.append(t);
+    w.append(bar, sc);
+    const head = t.tHead ? [...t.tHead.rows[0].cells] : [];
+    const rows = t.tBodies[0] ? [...t.tBodies[0].rows] : [];
+    rows.forEach((tr, i) => { tr.dataset.i = i; });
+    // number columns: right aligned (unless the Markdown sets an alignment), digits of one width
+    const ncol = Math.max(head.length, ...rows.map(r => r.cells.length), 0), num = [];
+    for (let c = 0; c < ncol; c++) {
+      const vs = rows.map(r => r.cells[c] ? cellText(r.cells[c]) : '').filter(Boolean);
+      num[c] = vs.length > 0 && vs.every(v => PV.parseCell(v, v).num != null);
+      if (num[c]) [head[c], ...rows.map(r => r.cells[c])].forEach(x => x && x.classList.add('num'));
+    }
+    // best values from the options of a .table block around the table: best="acc:max loss:min"
+    const best = host ? (host.dataset.best || '').split(/\s+/).filter(Boolean) : [];
+    for (const b of best) {
+      const [col, how] = b.split(':'), c = head.findIndex(h => cellText(h).toLowerCase() === (col || '').toLowerCase());
+      if (c < 0 || !num[c]) continue;
+      const vals = rows.map(r => r.cells[c] ? PV.parseCell(cellText(r.cells[c]), '').num : null);
+      const ok = vals.filter(v => v != null);
+      const target = how === 'min' ? Math.min(...ok) : Math.max(...ok);
+      rows.forEach((r, i) => { if (vals[i] === target) r.cells[c].classList.add('best'); });
+    }
+    // the toolbar
+    const info = el('span', null, `${rows.length} row${rows.length === 1 ? '' : 's'} × ${ncol}`);
+    const sortInfo = el('span', 'sortinfo');
+    const copyBtn = (label, fn) => { const b = btn(label, fn); b.title = 'Copy the table as ' + label; return b; };
+    bar.append(info, sortInfo, el('span', 'grow'),
+      Object.assign(btn('Edit', () => editTable(w)), {title: 'Edit the table in a grid (or double-click a cell)'}),
+      copyBtn('MD', () => { const r = blockRange(t); if (r) blockSource(r[0], r[1]).then(s => s != null && kit.copyText(s).then(() => toast('Table copied as Markdown.'))); }),
+      copyBtn('CSV', () => kit.copyText(tableCSV(t)).then(() => toast('Table copied as CSV.'))),
+      copyBtn('LaTeX', () => kit.copyText(tableLaTeX(t, num)).then(() => toast('Table copied as LaTeX.'))));
+    // sort: a ↕ in each column name. Up, down, then the order of the file again.
+    const apply = () => {
+      const st = tableSort.get(k), body = t.tBodies[0];
+      if (!body) return;
+      const order = [...rows];
+      if (st) {
+        const key = r => r.cells[st.col] ? cellText(r.cells[st.col]) : '';
+        order.sort((a, b) => {
+          const x = key(a), y = key(b);
+          const v = num[st.col] ? (PV.parseCell(x, '').num ?? -Infinity) - (PV.parseCell(y, '').num ?? -Infinity)
+            : x.localeCompare(y, undefined, {numeric: true});
+          return st.dir * v;
+        });
+      }
+      order.forEach(r => body.append(r));
+      head.forEach((h, c) => {
+        const s = h.querySelector('.srt');
+        s.classList.toggle('on', !!st && st.col === c);
+        s.textContent = st && st.col === c ? (st.dir > 0 ? '↑' : '↓') : '↕';
+      });
+      w.classList.toggle('sorted', !!st);
+      sortInfo.textContent = st ? ` · sorted by ${cellText(head[st.col])} ${st.dir > 0 ? '↑' : '↓'} (view only)` : '';
+    };
+    head.forEach((h, c) => {
+      const s = el('button', 'srt', '↕');
+      s.type = 'button'; s.title = 'Sort the rows of the view (the file does not change)';
+      s.onclick = ev => {
+        ev.stopPropagation();
+        const st = tableSort.get(k);
+        if (!st || st.col !== c) tableSort.set(k, {col: c, dir: 1});
+        else if (st.dir > 0) tableSort.set(k, {col: c, dir: -1});
+        else tableSort.delete(k);
+        apply();
+      };
+      h.append(s);
+    });
+    apply();
+  }
+}
+function tableCSV(t) {
+  const q = v => /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+  return [...t.rows].map(r => [...r.cells].map(c => q(cellText(c))).join(',')).join('\n') + '\n';
+}
+function tableLaTeX(t, num) {
+  const esc = v => v.replace(/([\\&%$#_{}~^])/g, m => ({'\\': '\\textbackslash{}', '~': '\\textasciitilde{}', '^': '\\textasciicircum{}'}[m] || '\\' + m));
+  const line = r => [...r.cells].map(c => esc(cellText(c))).join(' & ') + ' \\\\';
+  const head = t.tHead ? [...t.tHead.rows] : [], body = t.tBodies[0] ? [...t.tBodies[0].rows] : [];
+  const n = Math.max(0, ...[...t.rows].map(r => r.cells.length));
+  return ['\\begin{tabular}{' + Array.from({length: n}, (_, i) => num[i] ? 'r' : 'l').join('') + '}', '\\toprule',
+    ...head.map(line), ...(head.length ? ['\\midrule'] : []), ...body.map(line), '\\bottomrule', '\\end{tabular}'].join('\n') + '\n';
+}
+
+// ------------------------------------------------------------ the grid editor of a Markdown table
+// Double-click a cell (or Edit in the toolbar, or ✎) to edit the table in a grid. Each cell holds its Markdown
+// (also CriticMarkup), as in the file. Save writes a pipe table with aligned columns in place of the old one, and
+// Undo takes it back. Markdown… shows the text of the table. A table that is not a plain pipe table (in a quote, or a
+// row with more cells than the header) opens as text.
+function splitRow(line) {
+  let s = line.trim();
+  if (s.startsWith('|')) s = s.slice(1);
+  const cells = [];
+  let cur = '';
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (c === '\\' && i + 1 < s.length) { cur += c + s[i + 1]; i++; continue; }  // \| stays in the cell
+    if (c === '|') { cells.push(cur.trim()); cur = ''; continue; }
+    cur += c;
+  }
+  if (cur.trim() !== '' || !/(^|[^\\])\|$/.test(s) && s !== '') cells.push(cur.trim());
+  return cells;
+}
+function parseTable(text) {
+  const lines = text.replace(/\s+$/, '').split('\n');
+  if (lines.length < 2) return null;
+  const indent = lines[0].match(/^[ \t]*/)[0];
+  if (lines.some(l => !l.startsWith(indent))) return null;
+  const delim = splitRow(lines[1]);
+  if (!delim.length || !delim.every(c => /^:?-+:?$/.test(c))) return null;
+  const aligns = delim.map(c => c.startsWith(':') && c.endsWith(':') ? 'center' : c.endsWith(':') ? 'right' : c.startsWith(':') ? 'left' : '');
+  const head = splitRow(lines[0]);
+  if (head.length !== aligns.length) return null;
+  const rows = [];
+  for (const l of lines.slice(2)) {
+    const r = splitRow(l);
+    if (r.length > aligns.length) return null;  // the extra cells would be lost
+    while (r.length < aligns.length) r.push('');
+    rows.push(r);
+  }
+  return {aligns, head, rows, indent};
+}
+const cellSafe = v => v.replace(/\r?\n/g, ' ').replace(/\\?\|/g, m => m.length === 2 ? m : '\\|');
+function serializeTable(m) {
+  const len = v => [...v].length;
+  const all = [m.head, ...m.rows].map(r => r.map(cellSafe));
+  const w = m.aligns.map((a, c) => Math.max(3, ...all.map(r => len(r[c] || ''))));
+  const pad = (v, c) => {
+    const d = w[c] - len(v), a = m.aligns[c];
+    if (a === 'right') return ' '.repeat(d) + v;
+    if (a === 'center') return ' '.repeat(d >> 1) + v + ' '.repeat(d - (d >> 1));
+    return v + ' '.repeat(d);
+  };
+  const row = r => m.indent + '| ' + r.map(pad).join(' | ') + ' |';
+  const dl = m.aligns.map((a, c) => a === 'center' ? ':' + '-'.repeat(w[c] - 2) + ':' : a === 'right' ? '-'.repeat(w[c] - 1) + ':'
+    : a === 'left' ? ':' + '-'.repeat(w[c] - 1) : '-'.repeat(w[c]));
+  return [row(all[0]), m.indent + '| ' + dl.join(' | ') + ' |', ...all.slice(1).map(row)].join('\n');
+}
+
+// Edit the table of the card w. at: {r, c} of the cell to focus (r = -1 for the header).
+function editTable(w, at) {
+  if (editing) return;
+  const t = w.querySelector('table'), range = t && blockRange(t);
+  if (!range) return;
+  const [s, e] = range;
+  blockSource(s, e).then(text => {
+    if (text === null || editing) return;
+    const m = parseTable(text);
+    if (!m) { rawTableEdit(w, s, e, text); return; }
+    gridEditor(w, s, e, text, m, at || {r: 0, c: 0});
+  });
+}
+function rawTableEdit(w, s, e, text) {
+  const {wrap, area} = inlineEditor(w, text, 'Save', v => op({op: 'replace-block', s, e, text: v})
+    .then(ok => { if (ok) undoToast('Table edited'); return ok; }), true);
+  wrap.className = 'block-edit';
+  area.rows = Math.min(30, Math.max(3, text.split('\n').length + 1));
+}
+function gridEditor(w, s, e, text, m, at) {
+  editing = true;
+  const box = el('div', 'tedit'), grid = el('div', 'tedit-grid'), acts = el('div', 'acts');
+  let raw = null;  // the Markdown text box, when it is open
+  const ALIGN = {'': ['–', 'No alignment'], left: ['⇤', 'Left'], center: ['↔', 'Center'], right: ['⇥', 'Right']};
+  const NEXT = {'': 'left', left: 'center', center: 'right', right: ''};
+  const ncol = () => m.aligns.length;
+  const cellOf = (r, c) => grid.querySelector(`textarea[data-r="${r}"][data-c="${c}"]`);
+  const fit = a => { a.style.height = 'auto'; a.style.height = a.scrollHeight + 'px'; };
+  const tool = (label, title, fn, cls) => { const b = btn(label, fn, cls); b.title = title; b.tabIndex = -1; return b; };
+  function draw(focus) {
+    const tb = el('table'), thead = el('thead'), tbody = el('tbody'), tools = el('tr', 'ctool');
+    tools.append(el('td', 'rtool'));
+    for (let c = 0; c < ncol(); c++) {
+      const td = el('td');
+      td.append(tool(ALIGN[m.aligns[c]][0], 'Alignment: ' + ALIGN[m.aligns[c]][1] + ' (click to change)', () => { m.aligns[c] = NEXT[m.aligns[c]]; draw({r: -1, c}); }),
+        tool('◀', 'Move the column left', () => { if (c > 0) { swapCols(c, c - 1); draw({r: -1, c: c - 1}); } }),
+        tool('▶', 'Move the column right', () => { if (c < ncol() - 1) { swapCols(c, c + 1); draw({r: -1, c: c + 1}); } }),
+        tool('+', 'Add a column after this one', () => { addCol(c + 1); draw({r: -1, c: c + 1}); }),
+        tool('×', 'Delete the column', () => { if (ncol() > 1) { delCol(c); draw({r: -1, c: Math.max(0, c - 1)}); } }, 'x'));
+      tools.append(td);
+    }
+    const hr = el('tr');
+    hr.append(el('th', 'rtool'));
+    m.head.forEach((v, c) => { const th = el('th'); th.append(input(-1, c, v)); hr.append(th); });
+    thead.append(tools, hr);
+    m.rows.forEach((r, i) => {
+      const tr = el('tr'), rt = el('td', 'rtool');
+      rt.append(tool('↑', 'Move the row up', () => { if (i > 0) { [m.rows[i - 1], m.rows[i]] = [m.rows[i], m.rows[i - 1]]; draw({r: i - 1, c: 0}); } }),
+        tool('↓', 'Move the row down', () => { if (i < m.rows.length - 1) { [m.rows[i + 1], m.rows[i]] = [m.rows[i], m.rows[i + 1]]; draw({r: i + 1, c: 0}); } }),
+        tool('+', 'Add a row below', () => { m.rows.splice(i + 1, 0, Array(ncol()).fill('')); draw({r: i + 1, c: 0}); }),
+        tool('×', 'Delete the row', () => { m.rows.splice(i, 1); draw({r: Math.min(i, m.rows.length - 1), c: 0}); }, 'x'));
+      tr.append(rt);
+      r.forEach((v, c) => { const td = el('td'); td.append(input(i, c, v)); tr.append(td); });
+      tbody.append(tr);
+    });
+    tb.append(thead, tbody);
+    grid.replaceChildren(tb);
+    // the width of each column: its longest cell, between 8 and 24 characters (a longer cell wraps)
+    for (let c = 0; c < ncol(); c++) {
+      const n = Math.max(m.head[c].length, ...m.rows.map(r => r[c].length));
+      const h = cellOf(-1, c);
+      if (h) h.style.width = Math.min(24, Math.max(8, n + 2)) + 'ch';
+    }
+    grid.querySelectorAll('textarea').forEach(fit);
+    const f = focus && (cellOf(focus.r, focus.c) || cellOf(-1, 0));
+    if (f) { f.focus(); f.setSelectionRange(f.value.length, f.value.length); }
+  }
+  function input(r, c, v) {
+    const a = el('textarea');
+    a.rows = 1; a.value = v; a.dataset.r = r; a.dataset.c = c;
+    a.spellcheck = true;
+    a.style.textAlign = m.aligns[c] || 'left';
+    a.oninput = () => { (r < 0 ? m.head : m.rows[r])[c] = a.value.replace(/\r?\n/g, ' '); fit(a); };
+    a.onkeydown = ev => {
+      const last = m.rows.length - 1;
+      if (ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); save(); return; }
+      if (ev.key === 'Escape') { ev.preventDefault(); close(); return; }
+      if (ev.key === 'Tab') {
+        ev.preventDefault();
+        let rr = r, cc = c + (ev.shiftKey ? -1 : 1);
+        if (cc >= ncol()) { cc = 0; rr++; }
+        if (cc < 0) { cc = ncol() - 1; rr--; }
+        if (rr > last) { m.rows.push(Array(ncol()).fill('')); draw({r: rr, c: cc}); return; }
+        if (rr < -1) return;
+        cellOf(rr, cc).focus();
+        return;
+      }
+      if (ev.key === 'Enter') {
+        ev.preventDefault();
+        const rr = r + (ev.shiftKey ? -1 : 1);
+        if (rr > last) { m.rows.push(Array(ncol()).fill('')); draw({r: rr, c}); return; }
+        if (rr >= -1) cellOf(rr, c).focus();
+      }
+    };
+    return a;
+  }
+  function swapCols(a, b) {
+    for (const r of [m.head, m.aligns, ...m.rows]) [r[a], r[b]] = [r[b], r[a]];
+  }
+  function addCol(at) {
+    m.head.splice(at, 0, ''); m.aligns.splice(at, 0, '');
+    m.rows.forEach(r => r.splice(at, 0, ''));
+  }
+  function delCol(at) {
+    for (const r of [m.head, m.aligns, ...m.rows]) r.splice(at, 1);
+  }
+  const close = () => { box.replaceWith(w); editing = false; flushReload(); };
+  async function save() {
+    let v;
+    if (raw) v = raw.value.replace(/\s+$/, '');
+    else {
+      while (m.rows.length && m.rows[m.rows.length - 1].every(x => !x.trim())) m.rows.pop();  // empty rows at the end
+      v = serializeTable(m);
+    }
+    if (v === text.replace(/\s+$/, '')) { close(); return; }
+    editing = false;
+    const ok = await op({op: 'replace-block', s, e, text: v});
+    if (ok) undoToast('Table edited');
+    else if (box.isConnected) editing = true;
+  }
+  const mdBtn = btn('Markdown…', () => {
+    if (!raw) {
+      raw = el('textarea', 'raw');
+      raw.value = serializeTable(m);
+      raw.rows = Math.min(30, m.rows.length + 4);
+      raw.onkeydown = ev => {
+        if (ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); save(); }
+        if (ev.key === 'Escape') { ev.preventDefault(); close(); }
+      };
+      grid.replaceChildren(raw);
+      mdBtn.textContent = 'Grid';
+      addRow.hidden = addColB.hidden = true;
+      raw.focus();
+    } else {
+      const mm = parseTable(raw.value);
+      if (!mm) { toast('This text is not a pipe table. Keep editing it as text, or fix it first.'); return; }
+      m = mm; raw = null;
+      mdBtn.textContent = 'Markdown…';
+      addRow.hidden = addColB.hidden = false;
+      draw({r: 0, c: 0});
+    }
+  });
+  mdBtn.title = 'Edit the Markdown of the table';
+  const addRow = btn('+ Row', () => { m.rows.push(Array(ncol()).fill('')); draw({r: m.rows.length - 1, c: 0}); });
+  const addColB = btn('+ Column', () => { addCol(ncol()); draw({r: -1, c: ncol() - 1}); });
+  acts.append(el('span', 'hint', 'Tab: next cell · Enter: next row · ⌘/Ctrl+Enter: save'),
+    addRow, addColB, mdBtn, btn('Cancel', close), btn('Save', save, 'primary'));
+  box.append(grid, acts);
+  w.replaceWith(box);
+  draw(at);
+}
+
+// The cell under a double-click, as {r, c} of the file (r = -1 for the header), whatever the sort of the view.
+function cellAt(target) {
+  const c = target.closest('td, th');
+  if (!c) return null;
+  const tr = c.parentElement;
+  return {r: tr.parentElement.tagName === 'THEAD' ? -1 : +(tr.dataset.i || 0), c: c.cellIndex};
+}
+
 // ------------------------------------------------------------ highlights
 function paintMarks() {
   const ranged = state.threads.filter(t => t.e > t.s);
@@ -521,6 +824,7 @@ async function blockSource(s, e) {
 
 function editBlock(el) {
   if (editing) return;
+  if (el.classList.contains('mdt')) { editTable(el); return; }  // a table: the grid editor
   const [s, e] = blockRange(el);
   blockSource(s, e).then(text => {
     if (text === null || editing) return;
@@ -548,6 +852,8 @@ function addBlock(el, where) {
 // Double-click a block to edit it (not on a link, a comment highlight, a button or a suggestion).
 docEl.addEventListener('dblclick', e => {
   if (e.target.closest('a, button, mark.c, .math, .sg, mjx-container')) return;
+  const tw = e.target.closest('.mdt');
+  if (tw && !e.target.closest('.mdt-bar')) { getSelection().removeAllRanges(); editTable(tw, cellAt(e.target)); return; }
   let el = e.target;
   while (el && el.parentElement !== docEl) el = el.parentElement;
   if (!el || !el.dataset.pos || !blockRange(el)) return;

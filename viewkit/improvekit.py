@@ -299,8 +299,9 @@ def note_main(app, app_dir, argv):
 # ---------------------------------------------------------------------------------------------------------- the manifest
 def manifest(app_dir):
     """The improve.json of an app: {"app", "port_env", "claude_env", "tests": [...], "companions": [...],
-    "samples": [...], "default_file"}. "samples" are representative documents in the repository: every preview opens
-    copies of them, next to the document of the note. The tests set VIEWKIT_IMPROVE_TESTS (a JSON list) in place of
+    "deps", "samples": [...], "default_file"}. "samples" are representative documents in the repository: every preview
+    opens copies of them, next to the document of the note. "deps" (optional) is a subcommand of the app that prints the
+    files that a document uses, one path for each line, relative to the folder of the document (see companions_of). The tests set VIEWKIT_IMPROVE_TESTS (a JSON list) in place of
     "tests"."""
     m = json.loads((Path(app_dir) / "improve.json").read_text(encoding="utf-8"))
     if os.environ.get("VIEWKIT_IMPROVE_TESTS"):
@@ -308,9 +309,31 @@ def manifest(app_dir):
     return m
 
 
-def companions_of(m, p):
-    """The files that go with document p, for example its comments file (manifest "companions", with {name})."""
-    return [p.parent / c.format(name=p.name) for c in m.get("companions", [])]
+DEPS_MAX = 50 * 2**20  # the largest file that a preview copies from the deps of a document
+
+
+def companions_of(m, p, app_dir=None):
+    """The files that go with document p, for example its comments file (manifest "companions", with {name}), and the
+    files that the document uses (manifest "deps": `APP DEPS FILE` of the live app in app_dir, for example the data
+    files of a pageview page). Only the files in the folder of p (or below it) count."""
+    out = [p.parent / c.format(name=p.name) for c in m.get("companions", [])]
+    if m.get("deps") and app_dir:
+        try:
+            r = subprocess.run([sys.executable, str(Path(app_dir) / f"{m['app']}.py"), m["deps"], str(p)],
+                               capture_output=True, text=True, timeout=30)
+            out += [p.parent / x for x in r.stdout.splitlines() if x.strip()] if r.returncode == 0 else []
+        except (OSError, subprocess.SubprocessError) as e:
+            print(f"sandbox: no deps for {p.name}: {e}", file=sys.stderr)
+    home, seen, keep = p.parent.resolve(), set(), []
+    for c in out:
+        try:
+            rc = c.resolve()
+        except OSError:
+            continue
+        if home in rc.parents and rc not in seen and rc.is_file() and rc.stat().st_size <= DEPS_MAX:
+            seen.add(rc)
+            keep.append(c)
+    return keep
 
 
 # ---------------------------------------------------------------------------------------------------------- the sandbox
@@ -345,7 +368,7 @@ def sandbox_env(m, n, extra=None):
     return {**os.environ, m["port_env"]: str(sandbox_port(n)), **(extra or {})}
 
 
-def copy_docs(m, box, srcs):
+def copy_docs(m, box, srcs, app_dir=None):
     """Copy the documents and their companions into the sandbox folder. Returns the paths of the copies."""
     import shutil
     box.mkdir(parents=True, exist_ok=True)
@@ -354,9 +377,9 @@ def copy_docs(m, box, srcs):
         if not src.is_file():
             raise ValueError(f"{src} is not a file.")
         shutil.copy2(src, box / src.name)
-        for c in companions_of(m, src):
+        for c in companions_of(m, src, app_dir):
             if c.is_file():
-                rel = c.relative_to(src.parent)
+                rel = c.resolve().relative_to(src.parent.resolve())
                 (box / rel).parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(c, box / rel)
         copies.append(box / src.name)
@@ -376,7 +399,7 @@ def start_sandbox(app, app_dir, n, srcs, extra_env=None):
     samples = [wt / f for f in m.get("samples", []) if (wt / f).is_file()]
     if not srcs and not samples and m.get("default_file"):
         srcs = [wt / m["default_file"]]
-    copies = copy_docs(m, box, srcs) + copy_docs(m, box / "samples", samples)
+    copies = copy_docs(m, box, srcs, app_dir) + copy_docs(m, box / "samples", samples, app_dir)
     try:  # each copy of a document starts with the Claude Code account of the document
         import claudekit
         for src, c in zip(srcs, copies):

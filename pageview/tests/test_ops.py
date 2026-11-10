@@ -80,6 +80,20 @@ try:
     r = cli("list", str(tmp / "nothing.txt"))
     check("pageview refuses a file that is not a page or a data file", r.returncode != 0 and "not a page" in r.stderr)
 
+    # ---- pageview deps: the files that the preview of a note copies (improve.json, viewkit/improvekit.py)
+    r = cli("deps", str(page))
+    check("pageview deps lists the data files and figures of the page, not the links to other files",
+          r.stdout.split() == ["curves.csv", "fig/confusion_adamw.png", "fig/gradnorm_e10.pdf", "fig/lr_scatter.png",
+                               "runs.csv"], r.stdout + r.stderr)
+    r = cli("deps", str(tmp / "examples" / "vision_grid.csv"))
+    check("pageview deps of a data file is its NAME.view.json", r.stdout.split() == ["vision_grid.view.json"], r.stdout)
+    sys.path.insert(0, str(HERE.parent.parent / "viewkit"))
+    import improvekit  # noqa: E402
+    keep = [c.relative_to(page.parent).as_posix()
+            for c in improvekit.companions_of(improvekit.manifest(HERE.parent), page, HERE.parent)]
+    check("the preview copies the comments and the deps of the page", keep == [".pageview/optimizers.md.json",
+          "curves.csv", "fig/confusion_adamw.png", "fig/gradnorm_e10.pdf", "fig/lr_scatter.png", "runs.csv"], keep)
+
     # ---- the front matter
     fm = pv.front_matter("---\ntitle: 'A: B'\ntags: [a, b]\nauthors:\n  - X\n  - Y\nview: page\n---\n\n# H\n")
     check("front matter: a quoted value, a list in brackets, and a list of lines",
@@ -139,6 +153,29 @@ try:
         check("the page may not use a file of another project", app.dep(page, rel) is None)
     finally:
         shutil.rmtree(outside, ignore_errors=True)
+
+    # ---- the watermark art (viewkit/artkit.py)
+    import artkit  # noqa: E402
+    old = os.environ.get("VIEWKIT_ART")
+    os.environ["VIEWKIT_ART"] = str(tmp / "art")
+    try:
+        check("without the art folder, the manifest is empty and no file is served",
+              artkit.file("figures/manifest.json") == (b"[]", "application/json") and artkit.file("x.png") is None)
+        (tmp / "art" / "figures").mkdir(parents=True)
+        (tmp / "art" / "figures" / "o001-01-mask.png").write_bytes(b"\x89PNG")
+        (tmp / "secret.png").write_bytes(b"\x89PNG")
+        check("the art route serves an image of the folder, and nothing outside it",
+              artkit.file("figures/o001-01-mask.png") == (b"\x89PNG", "image/png")
+              and artkit.file("../secret.png") is None and artkit.file("figures/../../secret.png") is None)
+        check("a vote changes the score of a figure, and a bad id is refused",
+              artkit.vote_api({"id": "o001-01", "vote": 1}) == (200, {"score": 1})
+              and artkit.vote_api({"id": "o001-01", "vote": -1}) == (200, {"score": 0})
+              and artkit.vote_api({"id": "../x", "vote": 1})[0] == 404 and artkit.scores() == {"o001-01": 0})
+    finally:
+        if old is None:
+            os.environ.pop("VIEWKIT_ART", None)
+        else:
+            os.environ["VIEWKIT_ART"] = old
 
     # ---- PDF figures
     png = pv.pdf_figure(page.parent / "fig" / "gradnorm_e10.pdf")

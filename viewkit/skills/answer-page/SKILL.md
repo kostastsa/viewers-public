@@ -46,6 +46,11 @@ pageview add FILE - --cell TABLE ROW COL <<'EOF'  a new comment on a table cell
 6. **Write each reply** with `pageview reply FILE ID - <<'EOF'`. Use one to four sentences. Write plain text. The viewer shows `code`, **bold**, *italic*, and maths in `$…$` and `$$…$$`.
 7. **Verify.** Run `pageview list FILE`. Each thread that you answered must show `[answered]`.
 8. **Report** in chat. Write one short line for each thread: what was asked, and what you answered.
+9. **Write a note to pageview if it stopped your work.** Examples: a subcommand that you needed did not exist, a
+   subcommand gave an error or a wrong result, or you had to use a workaround. Write one note for each problem:
+   `pageview note - <<'EOF'` with one or two sentences, the command, and the error. Never put the text or the path of
+   the page in a note. The note becomes a GitHub issue, and the `improve` skill works on it later. If there was no
+   problem, write no note.
 
 ## Rules
 

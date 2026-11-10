@@ -3,8 +3,9 @@
   "port_env": "MDVIEW_PORT",
   "claude_env": "MDVIEW_CLAUDE",
   "tests": [
-    "uv run --with playwright python tests/chat_browser_test.py"
+    "uv run --with playwright python tests/chat_browser_test.py",
+    "uv run --with playwright python tests/blocks_browser_test.py"
   ],
-  "companions": [],
-  "samples": ["samples/maths.md", "samples/review.md", "samples/structure.md"]
+  "companions": ["runs.csv"],
+  "samples": ["samples/maths.md", "samples/review.md", "samples/structure.md", "samples/blocks.md"]
 }

@@ -59,10 +59,6 @@ HERE = Path(__file__).resolve().parent
 VIEWER = HERE / "viewer.html"
 VIEWER_JS = HERE / "viewer.js"
 VENDOR = HERE / "vendor"
-ART = HERE / "art"  # watermark images, kept out of git (see .gitignore)
-ART_SCORES = ART / "figures" / "scores.json"  # {figure id: score}: +1 per click on a figure in the viewer, -1 per double click
-ART_ID_RE = re.compile(r"p\d{3}-\d+|o\d{3}-\d{2}")  # a cut-out figure, or one organism of a Kunstformen plate
-art_lock = threading.Lock()
 FILTER = HERE / "safe.lua"
 ROOT = Path(os.environ.get("MDVIEW_ROOT") or Path.home()).expanduser().resolve()
 PORT = int(os.environ.get("MDVIEW_PORT") or 8765)
@@ -80,6 +76,8 @@ sys.path.insert(0, str(HERE.parent / "viewkit"))  # the code that mdview and pyv
 try:
     import claudekit
     import improvekit
+    import artkit
+    import datakit
     import serverkit
 except ImportError:
     sys.exit(f"mdview: the folder viewkit is missing. It must be next to mdview, at {HERE.parent / 'viewkit'}.")
@@ -102,7 +100,6 @@ TEXT_TYPES = {".tex", ".bib", ".sty", ".cls", ".bst", ".txt", ".log", ".py", ".r
               ".ts", ".json", ".yaml", ".yml", ".toml", ".csv", ".tsv", ".sh", ".zsh", ".bash", ".lua",
               ".css", ".xml", ".ini", ".cfg", ".c", ".h", ".cpp", ".hpp", ".rs", ".go", ".java", ".sql"}
 TEXT_MAX = 4 * 1024 * 1024
-ART_TYPES = {".webp": "image/webp", ".png": "image/png", ".json": "application/json"}
 VENDOR_TYPES = {".js": "text/javascript; charset=utf-8", ".woff": "font/woff", ".woff2": "font/woff2"}
 
 # Content-Security-Policy per kind of response. The viewer may run only its own scripts
@@ -114,28 +111,6 @@ CSP_VIEWER = ("default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-i
 CSP_INDEX = "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; base-uri 'none'; frame-ancestors 'none'"
 CSP_NONE = "default-src 'none'; base-uri 'none'; frame-ancestors 'none'"
 CSP_SVG = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox"  # SVGs can carry scripts
-
-def art_scores():
-    """{figure id: score}. Older files kept {"up": n, "down": n}; that reads as up - down."""
-    try:
-        raw = json.loads(ART_SCORES.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-    return {k: v["up"] - v["down"] if isinstance(v, dict) else v for k, v in raw.items()}
-
-
-def art_vote(fig, vote):
-    """Add 1 (vote > 0) or -1 to a figure's score. Returns the new score, or None if there is no such figure."""
-    if not ART_ID_RE.fullmatch(fig) or not any((ART / "figures" / f"{fig}-{k}").is_file() for k in ("mask.png", "line.webp")):
-        return None
-    with art_lock:
-        scores = art_scores()
-        scores[fig] = scores.get(fig, 0) + (1 if vote > 0 else -1)
-        tmp = ART_SCORES.with_suffix(".tmp")
-        tmp.write_text(json.dumps(scores), encoding="utf-8")
-        os.replace(tmp, ART_SCORES)  # atomic: a crash never leaves a half-written file
-        return scores[fig]
-
 
 # --------------------------------------------------------------------------
 # CriticMarkup parsing
@@ -825,6 +800,7 @@ def is_hidden(rel):
 
 
 REF_RE = re.compile(r'\s(?:src|href)="([^"]*)"')
+DATA_RE = re.compile(r'\sdata-src="([^"]*)"')  # the data file of a .table or .chart block (viewkit/components.js)
 MDLINK_RE = re.compile(r"\]\((<[^<>\n]*>|[^()\s]+)\)")  # [text](url) or [text](<url with spaces>)
 NOT_GRANTED = "mdview can only open files and folders you have passed to it. To open this one, run: mdview {}"
 
@@ -837,6 +813,7 @@ class App:
         self.grants_file = grants_file
         self.granted = set()  # files and folders passed to the mdview command
         self.media = set()    # images and media that granted documents refer to
+        self.data = set()     # data files (CSV, TSV, JSON) that the blocks of granted documents read
         self.linked = set()   # Markdown and text files that granted documents link to
         self.opened = set()   # the documents that pages opened: same names get longer labels
         if grants_file:
@@ -863,12 +840,14 @@ class App:
         """Let mdview open what a granted document refers to: images and media (/files/), and the
         Markdown and text files it links to. `more` adds raw link targets, e.g. from comments."""
         base = posixpath.dirname(rel)
-        for u in [html.unescape(u) for u in REF_RE.findall(page_html)] + list(more):
+        for u in [html.unescape(u) for u in REF_RE.findall(page_html) + DATA_RE.findall(page_html)] + list(more):
             u = u.strip("<>").split("#")[0].split("?")[0]
             if not u or re.match(r"[A-Za-z][A-Za-z0-9+.-]*:|/", u):
                 continue
             p = self.resolve(quote(posixpath.normpath(posixpath.join(base, unquote(u)))))
             ext = p.suffix.lower() if p else ""
+            if ext in datakit.DATA_EXT:
+                self.data.add(p)
             if ext in MEDIA_TYPES:
                 self.media.add(p)
             elif ext in MD_SUFFIXES or ext in TEXT_TYPES:
@@ -1008,17 +987,26 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(404, "Not found")
             return self.send(200, p.read_bytes(), VENDOR_TYPES[p.suffix])
 
-        if url.path == "/api/art/scores":
-            return self.send_json(200, art_scores())
+        if url.path == "/api/art/scores":  # the watermark (viewkit/artkit.py)
+            return self.send_json(200, artkit.scores())
+        if url.path.startswith("/art/"):  # a watermark image, or the manifest
+            a = artkit.file(unquote(url.path[len("/art/"):]))
+            return self.send(200, a[0], a[1]) if a else self.send(404, "Not found")
 
-        if url.path == "/art/figures/manifest.json" and not (ART / "figures" / "manifest.json").is_file():
-            return self.send_json(200, [])  # no watermark art in this checkout (art/ is not in git): draw nothing
-
-        if url.path.startswith("/art/"):  # a watermark image
-            p = (ART / unquote(url.path[len("/art/"):])).resolve()
-            if ART.resolve() not in p.parents or not p.is_file() or p.suffix not in ART_TYPES:
-                return self.send(404, "Not found")
-            return self.send(200, p.read_bytes(), ART_TYPES[p.suffix])
+        if url.path == "/api/data":  # the data file of a .table or .chart block, relative to the document
+            p, rel, err = self.md_path(q)
+            if err:
+                return self.send_json(err[0], {"error": err[1]})
+            src = (q.get("src") or [""])[0]
+            d = app.resolve(quote(posixpath.normpath(posixpath.join(posixpath.dirname(rel), src)))) if src else None
+            if not d or d.suffix.lower() not in datakit.DATA_EXT or not (app.allowed(d) or d in app.data):
+                return self.send_json(404, {"error": f"Data file not found: {src}"})
+            try:
+                return self.send_json(200, {"src": src, **datakit.read_table(d)})
+            except datakit.DataError as e:
+                return self.send_json(400, {"error": str(e)})
+            except (OSError, ValueError) as e:
+                return self.send_json(500, {"error": f"Cannot read {src}: {e}"})
 
         if url.path == "/api/version":
             p, rel, err = self.md_path(q)
@@ -1099,11 +1087,8 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError, TypeError):
             return self.send_json(400, {"error": "Bad request"})
 
-        if path == "/api/art/vote":  # a click (+1) or double click (-1) on a watermark figure
-            score = art_vote(str(op.get("id", "")), 1 if op.get("vote") == 1 else -1)
-            if score is None:
-                return self.send_json(404, {"error": "No such figure"})
-            return self.send_json(200, {"score": score})
+        if path == "/api/art/vote":  # a click (+1) or double click (-1) on a watermark figure (viewkit/artkit.py)
+            return self.send_json(*artkit.vote_api(op))
 
         if path == "/api/grant":  # the mdview command: allow a file or folder you passed to it
             target = Path(str(op.get("path", "")))

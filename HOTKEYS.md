@@ -13,7 +13,7 @@ This file lists the keys of the viewers. The first part gives the keys that many
 | ⌘/Ctrl+S | Open the chat and put the cursor in its text box. In the text box, hide the chat. | All. In the source editor of `texview`, this key saves. |
 | ⌘/Ctrl+Shift+M | Write a comment on the selected text. | All |
 | ⌘/Ctrl+\\ | Show or hide the comments sidebar. | All |
-| ⌘/Ctrl+Shift+. | Open or close the dashboard of the notes to the app. | All, but not `pageview` |
+| ⌘/Ctrl+Shift+. | Open or close the dashboard of the notes to the app. | All |
 
 ### In a comment box
 

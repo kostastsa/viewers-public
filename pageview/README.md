@@ -60,6 +60,9 @@ pageview add page.md 'text' --quote 'words of the page'          add a comment o
 pageview add page.md 'text' --cell runs.csv AdamW acc            add a comment on a table cell
 pageview add page.md 'text'          add a general comment
 pageview reply page.md ID - <<'EOF'  the text from stdin, up to a line EOF (also for add)
+pageview deps page.md                print the data files and images that the page uses
+pageview note 'text'                 a note to pageview itself (see Improve pageview)
+pageview try N [page.md]             try the proposal of note N, with copies of the page and its data
 pageview --status | --stop | --restart
 ```
 
@@ -80,9 +83,14 @@ One shared server runs in the background at `http://127.0.0.1:8768` (set `PAGEVI
 - **Comments sidebar** (header, or ⌘/Ctrl+\\): the threads, **+ Comment** (about the whole page), **Oracle**, and **Resolve all**. **Reply** and **Resolve** are on each comment. **Edit** and **Delete** show when the pointer is on a message. **Undo** in the header takes back the last change, also a change by Claude.
 - **Oracle:** starts Claude Code in the background (`claude -p "/answer-page FILE"`). Claude replies in each open thread. One session per page. **New session** forgets the earlier rounds. The run cannot edit files.
 - **Chat** (bottom right, or ⌘/Ctrl+S): ask Claude about the page. Claude gets the selected words or cell, and the section that you read. In the normal mode, Claude can change the page and its data files, and answer or add comments, when you ask. **Ask only** stops all changes.
+- **Improve pageview** (⌘/Ctrl+Shift+.): the dashboard of the notes to the app. A note is a problem or a wish about pageview itself, not about the page. The dashboard is the same in all the viewers (`kit.improveDash`). The full description is in the README of pdfview, under "Improve pdfview".
+  - Write the note and press Enter. The note waits in **Notes to send**, with the open page and the state of the viewer: the kind of file (page or data file), the theme, the panels, the number of comments, the chat, the Oracle, and the last buttons that you clicked. It never gets the text of the page. **Send all** sends the notes in the list.
+  - **The automatic loop:** Claude implements each note in the background. When the tests pass, a preview tab opens. The preview shows the new version of pageview with a copy of the page of the note and copies of the samples (`examples/optimizers/optimizers.md` and `examples/vision_grid.csv`). Each copy gets its comments, and the data files and images that it uses (`pageview deps`, files of 50 MB or less in the folder of the page). The card of the preview has **Accept**, **Change…** and **Reject**. Your real files do not change.
+  - `pageview try N page.md` opens the same sandbox from the command line, on port 8900+N. The test of the loop is in viewkit: `uv run --with playwright python tests/improve_test.py pageview`.
 - **Live:** the page updates when the page file, a data file, an image, or the comments change.
 - **Theme:** **◐ Auto** follows the system. Click it for light, then dark.
 - **Contents:** ☰ (or the key `o`) shows the sections at the left.
+- **Watermark:** faint figures in the free margins at the left and the right of the text, in the accent color. They are the art of mdview (`viewkit/artkit.py`), and they change at each load. Click a figure to like it (+1), or double-click it to dislike it (-1). A figure with a higher score comes up more often. mdview and pageview share the scores. A margin under 100 px, or a data file alone, gets no figures. Without the art folder, there are no figures.
 
 ## The comments file
 

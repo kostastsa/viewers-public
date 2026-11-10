@@ -137,3 +137,13 @@ body.kitResizing iframe{pointer-events:none}
   padding:0 4px;max-width:9em;cursor:pointer;opacity:.85}
 .kitAcct:hover{opacity:1}
 .kitAcct option{color:initial;background:initial}
+
+/* The watermark (kit.watermark): figures behind the page, in the accent color. An app can change --kit-wm-opacity. */
+.kitWm{position:fixed;z-index:-1;pointer-events:none;background:var(--accent);opacity:var(--kit-wm-opacity,.22);
+  -webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;-webkit-mask-size:contain;mask-size:contain;
+  -webkit-mask-position:center;mask-position:center}
+.kitWm[hidden]{display:none}
+#kitWmVote{position:fixed;left:-99px;top:0;z-index:30;font:12px var(--ui,system-ui);color:var(--fg);background:var(--panel,Canvas);
+  border:1px solid var(--border,currentColor);padding:2px 7px;pointer-events:none;opacity:0;transition:opacity .15s}
+body.kit-wm-hover{cursor:pointer}
+body.kit-wm-hover #kitWmVote,#kitWmVote.flash{opacity:1}
