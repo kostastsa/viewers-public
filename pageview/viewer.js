@@ -652,6 +652,27 @@ $('newSession').onclick = () => {
     oracleCall('new').then(ok => ok && toast('The next Oracle run starts a new session.'));
 };
 
+// ------------------------------------------------------------ notes to the app (self-improving apps)
+// ⌘/Ctrl+Shift+. opens the dashboard of the kit: the notes wait there until Send all, which starts the automatic loop
+// (viewkit/improvekit.py). In the sandbox of a proposal, the preview card gives Accept, Change… and Reject.
+kit.improveDash({
+  app: 'pageview',
+  get: () => api('GET', `/api/improve/dash?f=${enc(FILE)}`),
+  post: body => api('POST', '/api/improve/dash', body),
+  context: () => ({
+    kind: S.doc ? S.doc.kind : null, widgets: S.doc && S.doc.widgets || 0, theme: stored('theme') || 'system',
+    sidebar: !document.body.classList.contains('noside'), contents: !document.body.classList.contains('nonav'),
+    sources: document.body.classList.contains('allsrc'),
+    comments: S.doc ? S.doc.threads.length : 0, composing: S.comp ? S.comp.type : null,
+    chat: !$('chatBox').hidden, oracle: !!(oracle && oracle.running),
+  }),
+  onDone: (msg, label, fn) => toast(msg, label || null, fn || null, 12000),
+});
+kit.previewBand({
+  get: () => api('GET', `/api/improve/preview?f=${enc(FILE)}`),
+  post: body => api('POST', '/api/improve/preview', body),
+});
+
 // ------------------------------------------------------------ controls and keys
 $('undoBtn').onclick = undo;
 $('sideBtn').onclick = () => setSide(document.body.classList.contains('noside'));
@@ -700,6 +721,29 @@ async function poll() {
   finally { polling = false; }
 }
 
+// ------------------------------------------------------------ the watermark (kit.watermark, viewkit/artkit.py)
+// Figures down the free margins at the left and the right of the text column, in the accent color. A click on a figure
+// is +1, a double click -1. A data file alone fills the window, so it has no figures.
+function wmCols() {
+  if (document.body.classList.contains('datadoc') || innerWidth <= 900) return null;
+  const doc = $('doc').getBoundingClientRect();
+  const tw = Math.min(parseFloat(getComputedStyle(document.body).getPropertyValue('--text-w')) || 760, doc.width - 32);
+  const tl = doc.left + (doc.width - tw) / 2, tr = tl + tw;
+  const side = $('side'), right = side.offsetParent ? side.getBoundingClientRect().left : document.documentElement.clientWidth;
+  const col = (a, b) => ({x: a, w: Math.min(300, b - a)});
+  return [col(16, tl - 24), col(tr + 24, right - 16)];
+}
+function startWatermark() {
+  kit.watermark({
+    cols: wmCols,
+    isBg: t => t === document.documentElement || t === document.body || t === $('main') || t === $('doc') || t.tagName === 'NAV',
+    post: body => api('POST', '/api/art/vote', body),
+    toast: m => toast(m),
+  }).then(wm => {
+    if (wm) new ResizeObserver(() => wm.layout()).observe($('main'));  // the sidebar or the contents open or close
+  });
+}
+
 // ------------------------------------------------------------ start
 (async () => {
   kit.tab({app: 'page'});
@@ -709,6 +753,7 @@ async function poll() {
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => setTheme(stored('theme') || 'system'));
   if (!FILE) { $('doc').replaceChildren(el('div', 'err-page', 'No file. Open one with: pageview FILE.md')); return; }
   if (!await loadDoc()) return;
+  startWatermark();
   oracleCall();
   setInterval(poll, 2000);
 })();

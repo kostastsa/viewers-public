@@ -1,0 +1,18 @@
+{
+  "app": "pageview",
+  "port_env": "PAGEVIEW_PORT",
+  "claude_env": "PAGEVIEW_CLAUDE",
+  "tests": [
+    "python3 tests/test_ops.py",
+    "uv run --with playwright python tests/browser_test.py"
+  ],
+  "companions": [
+    ".pageview/{name}.json"
+  ],
+  "deps": "deps",
+  "default_file": "examples/optimizers/optimizers.md",
+  "samples": [
+    "examples/optimizers/optimizers.md",
+    "examples/vision_grid.csv"
+  ]
+}

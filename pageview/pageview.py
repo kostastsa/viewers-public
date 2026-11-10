@@ -24,6 +24,9 @@ Usage:
     pageview list FILE [--json]          print the comment threads
     pageview reply FILE ID TEXT          add a reply to thread ID (as claude). TEXT "-" reads it from stdin.
     pageview add FILE TEXT [--quote Q | --cell TABLE ROW COL]   add a comment (as claude). TEXT "-" reads stdin.
+    pageview deps FILE                   print the data and image files that the page uses
+    pageview note TEXT                   a note to pageview itself (the dashboard of the notes, viewkit/improvekit.py)
+    pageview try N [FILE ...]            try the proposal of note N in a sandbox, with copies of the files
     pageview --status | --stop | --restart
 
 One server runs in the background on 127.0.0.1:8768 and serves files under your home folder (PAGEVIEW_ROOT and
@@ -81,8 +84,10 @@ PAGE_EXT = {".md", ".markdown"}
 
 sys.path.insert(0, str(HERE.parent / "viewkit"))  # the code that the viewers share
 try:
+    import artkit
     import claudekit
     import datakit
+    import improvekit
     import serverkit
 except ImportError:
     sys.exit(f"pageview: the folder viewkit is missing. It must be next to pageview, at {HERE.parent / 'viewkit'}.")
@@ -859,9 +864,14 @@ class Handler(BaseHTTPRequestHandler):
         if url.path.startswith("/kit/"):  # the page code that the viewers share
             a = serverkit.kit_asset(unquote(url.path[len("/kit/"):]))
             return self.send(200, a[0], a[1]) if a else self.send(404, "Not found")
+        if url.path == "/api/art/scores":  # the watermark (viewkit/artkit.py)
+            return self.send_json(200, artkit.scores())
+        if url.path.startswith("/art/"):  # a watermark image, or the manifest
+            a = artkit.file(unquote(url.path[len("/art/"):]))
+            return self.send(200, a[0], a[1]) if a else self.send(404, "Not found")
 
         if url.path in ("/api/doc", "/api/version", "/api/chat", "/api/claude", "/api/data", "/file", "/go",
-                        "/api/account", "/widget"):
+                        "/api/account", "/widget", "/api/improve/dash", "/api/improve/preview"):
             p, rel, err = self.doc_path(q)
             if err:
                 return self.send_json(err[0], {"error": err[1]})
@@ -904,6 +914,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(404, f"pageview cannot open this link: {src}", "text/plain; charset=utf-8")
             if url.path == "/widget":  # one widget block of the page, alone, for a sandboxed frame
                 return self.widget(p, (q.get("i") or [""])[0], (q.get("theme") or [""])[0])
+            if url.path == "/api/improve/dash":  # the dashboard of the notes (self-improving apps)
+                return self.send_json(*improvekit.dash_api("pageview", HERE, "GET"))
+            if url.path == "/api/improve/preview":  # in the sandbox of a proposal: the card with Accept and Reject
+                return self.send_json(*improvekit.preview_api("GET"))
             if url.path == "/api/claude":
                 st = ORACLE.status(p)
                 app.oracle_seen(p, st)
@@ -949,7 +963,8 @@ class Handler(BaseHTTPRequestHandler):
         if not self.authorized():
             return self.deny(True)
         path = urlparse(self.path).path
-        if path not in ("/api/op", "/api/grant", "/api/chat", "/api/account", "/api/claude"):
+        if path not in ("/api/op", "/api/grant", "/api/chat", "/api/account", "/api/claude", "/api/improve/dash",
+                        "/api/improve/preview", "/api/art/vote"):
             return self.send_json(404, {"error": "Not found"})
         try:
             op = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
@@ -957,6 +972,9 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError
         except (ValueError, TypeError):
             return self.send_json(400, {"error": "Bad request"})
+
+        if path == "/api/art/vote":  # a click (+1) or double click (-1) on a watermark figure (viewkit/artkit.py)
+            return self.send_json(*artkit.vote_api(op))
 
         if path == "/api/grant":  # the pageview command: allow a file or folder you passed to it
             target = Path(str(op.get("path", "")))
@@ -973,6 +991,15 @@ class Handler(BaseHTTPRequestHandler):
         p, rel, err = self.doc_path({"f": [str(op.get("f", ""))]})
         if err:
             return self.send_json(err[0], {"error": err[1]})
+
+        if path == "/api/improve/dash":  # the dashboard: add, edit or delete a waiting note, or send them all
+            if improvekit.preview_of():
+                return self.send_json(409, {"error": "This is a preview. Write notes in the live pageview tab."})
+            port = self.server.server_address[1]
+            back = f"http://{serverkit.app_host('pageview')}:{port}/view?f={quote(rel)}"
+            return self.send_json(*improvekit.dash_api("pageview", HERE, "POST", op, p, back))
+        if path == "/api/improve/preview":  # the decision in the preview tab: accept, change or reject
+            return self.send_json(*improvekit.preview_api("POST", op))
 
         if path == "/api/account":  # the Claude Code account of the chat and the Oracle (claudekit)
             return self.send_json(*claudekit.account_api("POST", op, p))
@@ -1235,12 +1262,39 @@ def sub_main(argv):
 SUBCOMMANDS = ("list", "reply", "add")
 
 
+def cmd_deps(argv):
+    """`pageview deps FILE`: the files that the page uses (its data files and images), one path for each line, relative
+    to the folder of the page. For a data file: its NAME.view.json. The preview of a note copies them (improve.json)."""
+    if len(argv) != 1:
+        sys.exit("usage: pageview deps FILE")
+    p = Path(argv[0]).expanduser().resolve()
+    if not p.is_file() or p.suffix.lower() not in DOC_EXT:
+        sys.exit(f"pageview: not a page or a data file: {argv[0]}")
+    if p.suffix.lower() in PAGE_EXT:
+        try:
+            deps = render_page(read_page(p), p.name)[2]
+        except RuntimeError as e:
+            sys.exit(f"pageview: {e}")
+    else:
+        deps = [p.stem + ".view.json"]
+    for d in deps:
+        if not is_hidden(Path(d)) and (p.parent / d).is_file():
+            print(d)
+
+
 def main():
+    if len(sys.argv) > 1 and sys.argv[1] == "note":  # a note to the app, not about a page (viewkit/improvekit.py)
+        return improvekit.note_main("pageview", HERE, sys.argv[2:])
+    if len(sys.argv) > 1 and sys.argv[1] == "try":  # try a proposal in a sandbox: copies of the page and its data
+        return improvekit.try_main("pageview", HERE, sys.argv[2:])
+    if len(sys.argv) > 1 and sys.argv[1] == "deps":  # the files that a page uses (for the preview of a note)
+        return cmd_deps(sys.argv[2:])
     if len(sys.argv) > 1 and sys.argv[1] in SUBCOMMANDS:
         return sub_main(sys.argv[1:])
     ap = argparse.ArgumentParser(
         prog="pageview", description="Rich pages from Markdown and data files, in the browser.",
-        epilog=f"Subcommands: pageview {{list,reply,add}} FILE ... (see pageview add -h). One shared server runs in "
+        epilog=f"Subcommands: pageview {{list,reply,add}} FILE ... (see pageview add -h), pageview note TEXT, and "
+               f"pageview try N [FILE]. One shared server runs in "
                f"the background on port {PORT} and can open any file under {ROOT}. Its log is {LOG}.")
     ap.add_argument("target", nargs="*", help="the pages, data files or folders to open, each in its own browser tab "
                                               "(default: current folder)")

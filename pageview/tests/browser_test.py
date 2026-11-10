@@ -1,5 +1,5 @@
 """Browser test of pageview: the components, sort and Copy, text and cell comments, live reload, a data file alone,
-the chat and the Oracle. It uses its own server on port 8811 and a stand-in `claude` (viewkit/tests/fake_claude.py).
+the chat, the Oracle, the dashboard of the notes and the watermark. It uses its own server on port 8811 and a stand-in `claude` (viewkit/tests/fake_claude.py).
 Needs Playwright and its Chromium, and pandoc. Run:
     uv run --with playwright python tests/browser_test.py
 It deletes its temporary folder in tests/tmp at the end. Set PAGEVIEW_KEEP_TMP=1 to keep it for debugging."""
@@ -30,7 +30,30 @@ shutil.copytree(HERE.parent / "examples", tmp / "examples")
 page = tmp / "examples" / "optimizers" / "optimizers.md"
 grid = tmp / "examples" / "vision_grid.csv"
 side = page.parent / ".pageview" / "optimizers.md.json"
-env = dict(os.environ, PATH=f"{bindir}:{os.environ['PATH']}", PAGEVIEW_PORT=PORT, PAGEVIEW_CLAUDE=str(bindir / "claude"))
+KIT = HERE.parent.parent / "viewkit"
+env = dict(os.environ, PATH=f"{bindir}:{os.environ['PATH']}", PAGEVIEW_PORT=PORT, PAGEVIEW_CLAUDE=str(bindir / "claude"),
+           VIEWKIT_GH=str(KIT / "tests" / "fake_gh.py"), FAKE_GH_LOG=str(tmp / "gh.jsonl"),
+           VIEWKIT_NOTES_QUEUE=str(tmp / "notes-queue.jsonl"), VIEWKIT_AUTO_IMPROVE="0",
+           VIEWKIT_IMPROVE_DIR=str(tmp / "improve"),  # the notes of the test never reach the real tracker
+           VIEWKIT_ART=str(tmp / "art"))  # a small art folder for the watermark (viewkit/artkit.py)
+
+
+def png(w, h):
+    """A black PNG of w x h pixels: the mask of a watermark figure."""
+    import struct
+    import zlib
+    chunk = lambda t, d: struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d))
+    raw = b"".join(b"\x00" + b"\x00\x00\x00\xff" * w for _ in range(h))
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 6, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
+
+
+(tmp / "art" / "figures").mkdir(parents=True)
+for fid in ("o001-01", "o001-02"):
+    (tmp / "art" / "figures" / f"{fid}-mask.png").write_bytes(png(40, 60))
+(tmp / "art" / "figures" / "manifest.json").write_text(json.dumps(
+    [{"id": fid, "kind": "organism", "w": 40, "h": 60, "mask": f"{fid}-mask.png"} for fid in ("o001-01", "o001-02")]))
+MOD = "Meta" if sys.platform == "darwin" else "Control"
 failures = []
 
 
@@ -218,6 +241,50 @@ try:
         pg.locator("#themeBtn").click()
         check("dark", pg.evaluate("() => document.documentElement.dataset.theme") == "dark")
         pg.locator("#themeBtn").click()
+
+        # --- the watermark: figures in the margins, a click is +1, a double click -1 (kit.watermark, artkit.py)
+        pg.locator(".kitWm:not([hidden])").first.wait_for(timeout=5000)
+        figs = pg.locator(".kitWm:not([hidden])")
+        tw = pg.evaluate("() => { const r = document.querySelector('#doc h1').getBoundingClientRect(); return [r.left, r.right]; }")
+        boxes = [figs.nth(i).bounding_box() for i in range(figs.count())]
+        check("the watermark draws the figures of the art folder in the margins, not over the text",
+              len(boxes) == 2 and all(b["x"] + b["width"] <= tw[0] or b["x"] >= tw[1] for b in boxes), (boxes, tw))
+        sf = tmp / "art" / "figures" / "scores.json"
+        score = lambda: sum(json.loads(sf.read_text()).values()) if sf.is_file() else 0
+        # a point on a figure with the empty background on top (not a link of the contents)
+        cx, cy = pg.evaluate("""boxes => {
+          const bg = e => e === document.body || e.id === 'main' || e.id === 'doc' || e.tagName === 'NAV';
+          for (const b of boxes) for (let fy = 0.1; fy < 1; fy += 0.1) for (let fx = 0.1; fx < 1; fx += 0.1) {
+            const x = b.x + fx * b.width, y = b.y + fy * b.height;
+            if (bg(document.elementFromPoint(x, y))) return [x, y];
+          }
+          return [0, 0];
+        }""", boxes)
+        pg.mouse.move(cx, cy)
+        check("the pointer over a figure shows its score", pg.locator("#kitWmVote").inner_text() == "0")
+        pg.mouse.click(cx, cy)
+        pg.wait_for_timeout(900)
+        check("a click on a figure adds 1 to its score", score() == 1, sf.read_text() if sf.is_file() else "no scores")
+        pg.mouse.dblclick(cx, cy)
+        pg.wait_for_timeout(900)
+        check("a double click adds -1, and not +1 first", score() == 0, sf.read_text() if sf.is_file() else "no scores")
+
+        # --- the dashboard of the notes to pageview (kit.improveDash, ⌘/Ctrl+Shift+.)
+        pg.locator("#main").click(position={"x": 5, "y": 5})
+        pg.keyboard.press(f"{MOD}+Shift+Period")
+        pg.locator(".kitDash textarea").wait_for(timeout=5000)
+        check("⌘/Ctrl+Shift+. opens the dashboard", pg.locator(".kitDash").count() == 1)
+        pg.locator(".kitDash textarea").fill("The chart needs a log scale.")
+        pg.keyboard.press("Enter")
+        pg.locator(".kitDashList", has_text="log scale").wait_for(timeout=5000)
+        df = tmp / "improve" / "pageview-drafts.json"
+        dr = json.loads(df.read_text()) if df.is_file() else []
+        check("a note waits in the dashboard, with the page and the context of the app",
+              len(dr) == 1 and dr[0].get("text") == "The chart needs a log scale."
+              and str(page.resolve()) in json.dumps(dr) and '"kind": "page"' in json.dumps(dr), dr)
+        pg.keyboard.press("Escape")
+        check("Esc closes the dashboard", pg.locator(".kitDash").count() == 0)
+        check("the page shows no preview card (this is not a sandbox)", pg.locator(".kitPreview").count() == 0)
 
         check("no errors in the console (page)", not errs, errs)
 

@@ -6,11 +6,28 @@
 <title>mdview</title>
 <link rel="icon" type="image/png" href="/kit/icons/md.png">
 <link rel="stylesheet" href="/kit/kit.css">
+<link rel="stylesheet" href="/kit/components.css">
 <style>
+:root[data-text="serif"]{--doc-font:Charter,"Iowan Old Style",Georgia,serif;--doc-size:18px;--doc-lh:1.72}
+:root[data-text="mono"]{--doc-font:var(--mono);--doc-size:15px;--doc-lh:1.65}
+:root[data-head="text"]{--head-font:var(--doc-font)}
 :root{color-scheme:dark;--bg:#111214;--fg:#d6d9de;--muted:#80858d;--panel:#16181b;--border:#2a2d32;--accent:#8a9bd6;
   --hl:#363c53;--hl2:#59648e;--ok:#1f3a2e;--ok2:#2f5a46;--claude:#1c1f23;--code:#131518;--warn:#e09c9c;
   --del:#e09c9c;--delbg:#33201f;--ins:#86c7a4;--insbg:#18281f;
-  --ui:ui-monospace,"SF Mono",Menlo,monospace}
+  --ui:ui-monospace,"SF Mono",Menlo,monospace;
+  /* the names that the blocks of viewkit/components.css use, made from the palette of the file */
+  --sans:system-ui,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;--serif:"Iowan Old Style",Charter,"Palatino Linotype",Georgia,serif;
+  --mono:ui-monospace,"SF Mono",Menlo,monospace;--surface:color-mix(in srgb,var(--panel) 55%,var(--bg));
+  --line:color-mix(in srgb,var(--border) 75%,var(--bg));--line2:var(--border);--sunken:var(--code);
+  --hover:color-mix(in srgb,var(--accent) 9%,transparent);--accent-soft:color-mix(in srgb,var(--accent) 13%,var(--bg));
+  --good:#5fd09d;--good-soft:color-mix(in srgb,#5fd09d 15%,var(--bg));--warn-soft:color-mix(in srgb,#e8a264 14%,var(--bg));
+  --danger:#f08a8a;--danger-soft:color-mix(in srgb,#f08a8a 14%,var(--bg));--tip:#b9a2f5;--tip-soft:color-mix(in srgb,#b9a2f5 14%,var(--bg));
+  --heat:#3cc2b5;--cold:#ef9467;--shadow:none;
+  /* the fonts (the Aa menu, fontMenu in viewer.js): the default is the look of pageview */
+  --serif-pv:"Iowan Old Style",Charter,"Palatino Linotype",Georgia,serif;
+  --doc-font:var(--sans);--doc-size:16px;--doc-lh:1.65;--head-font:var(--serif-pv);
+  --c1:#8fa9f6;--c2:#ef9467;--c3:#5fd09d;--c4:#cf98e6;--c5:#e9c84f;--c6:#f28bb1;--c7:#7fc0f5;--c8:#b6c47a}
+:root[data-ui="sans"]{--ui:var(--sans)}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--fg)}
 header{position:sticky;top:0;z-index:5;display:flex;gap:12px;align-items:center;padding:8px 16px;
@@ -23,8 +40,10 @@ header .grow{flex:1}
 main{display:grid;grid-template-columns:220px minmax(0,1fr) 300px;gap:32px;padding:32px 16px}
 
 /* ----- document ----- */
-#doc{grid-column:2;width:100%;justify-self:center;min-width:0;max-width:640px;font:18px/1.72 Charter,"Iowan Old Style",Georgia,serif}
-#doc h1,#doc h2,#doc h3,#doc h4{line-height:1.25;margin:1.4em 0 .5em}
+#doc{grid-column:2;width:100%;justify-self:center;min-width:0;max-width:640px;
+  font:calc(var(--doc-size) + var(--doc-step,0px))/var(--doc-lh) var(--doc-font)}
+#doc h1,#doc h2,#doc h3,#doc h4{line-height:1.25;margin:1.4em 0 .5em;font-family:var(--head-font);font-weight:600}
+:root:not([data-head="text"]) #doc h1{letter-spacing:-.01em}
 #doc .doc-title{margin-top:0}
 #doc a{color:var(--accent)}
 #doc img{max-width:100%}
@@ -33,8 +52,55 @@ main{display:grid;grid-template-columns:220px minmax(0,1fr) 300px;gap:32px;paddi
 #doc pre code{background:none;padding:0}
 #doc mjx-container[display="true"]{overflow-x:auto;overflow-y:hidden;max-width:100%}
 #doc blockquote{margin:1em 0;padding:0 1em;border-left:3px solid var(--border);color:var(--muted)}
-#doc table{border-collapse:collapse;margin:1em 0;font-size:.95em}
-#doc th,#doc td{border:1px solid var(--border);padding:4px 10px;text-align:left}
+#doc>table{border-collapse:collapse;margin:1em 0;font-size:.95em}
+#doc>table :is(th,td){border:1px solid var(--border);padding:4px 10px;text-align:left}
+
+/* ----- Markdown tables (mdTables in viewer.js): the table of pandoc in a card, so comments and changes stay on it ----- */
+#doc .mdt{margin:1.3em 0;border:1px solid var(--line);border-radius:10px;background:var(--surface);font:14.5px/1.5 var(--sans)}
+#doc .mdt-bar{display:flex;gap:4px;align-items:center;padding:4px 6px 4px 12px;border-bottom:1px solid var(--line);
+  font:11.5px var(--ui);color:var(--muted);user-select:none}
+#doc .mdt-bar .grow{flex:1}
+#doc .mdt-bar button{font:11px var(--ui);padding:1px 7px;border-color:transparent;background:none;color:var(--muted)}
+#doc .mdt-bar button:hover{border-color:var(--line);color:var(--fg)}
+#doc .mdt-scroll{overflow-x:auto;border-radius:0 0 10px 10px}
+#doc .mdt table{border-collapse:separate;border-spacing:0;width:100%;margin:0;font-variant-numeric:tabular-nums}
+#doc .mdt th,#doc .mdt td{border:0;border-bottom:1px solid var(--line);padding:7px 12px;vertical-align:top}
+#doc .mdt th:not([style]),#doc .mdt td:not([style]){text-align:left}
+#doc .mdt :is(th,td).num:not([style]){text-align:right}
+#doc .mdt thead th{background:var(--sunken);font-weight:600;font-size:13px;white-space:nowrap;position:relative}
+#doc .mdt tbody tr:nth-child(even) td{background:color-mix(in srgb,var(--fg) 2.5%,transparent)}
+#doc .mdt tbody tr:hover td{background:var(--hover)}
+#doc .mdt tbody tr:last-child td{border-bottom:0}
+#doc .mdt td.best{background:var(--good-soft)!important;font-weight:650}
+#doc .mdt .srt{all:unset;cursor:pointer;margin-left:4px;padding:0 3px;font:11px var(--ui);color:var(--muted);opacity:0;transition:opacity .15s}
+#doc .mdt th:hover .srt,#doc .mdt .srt.on,#doc .mdt .srt:focus-visible{opacity:1}
+#doc .mdt .srt.on{color:var(--accent)}
+#doc .mdt.sorted .mdt-bar .sortinfo{color:var(--accent)}
+
+/* ----- the grid editor of a Markdown table (editTable in viewer.js) ----- */
+#doc .tedit{margin:1.3em 0;border:1px solid var(--accent);border-radius:10px;background:var(--surface);padding:8px;font:13px var(--sans)}
+#doc .tedit-grid{overflow-x:auto;padding-bottom:2px}
+#doc .tedit table{border-collapse:collapse;margin:0;width:max-content;min-width:100%}
+#doc .tedit th,#doc .tedit td{border:1px solid var(--line);padding:0;vertical-align:top}
+#doc .tedit td.rtool,#doc .tedit th.rtool,#doc .tedit tr.ctool td{border:0;padding:0 2px;white-space:nowrap;text-align:center}
+#doc .tedit textarea{display:block;width:100%;min-width:8ch;min-height:0;height:auto;border:0;border-radius:0;background:transparent;
+  color:var(--fg);font:13.5px/1.45 var(--sans);padding:5px 8px;resize:none;overflow:hidden;field-sizing:content}
+#doc .tedit thead textarea{font-weight:650}
+#doc .tedit textarea:focus{outline:2px solid var(--accent);outline-offset:-2px;background:var(--hover)}
+#doc .tedit tr.ctool button,#doc .tedit .rtool button{font:11px var(--ui);padding:0 4px;border:0;background:none;color:var(--muted)}
+#doc .tedit tr.ctool button:hover,#doc .tedit .rtool button:hover{color:var(--fg)}
+#doc .tedit .rtool button.x:hover,#doc .tedit tr.ctool button.x:hover{color:var(--del)}
+#doc .tedit .acts{align-items:center;flex-wrap:wrap}
+#doc .tedit .acts button{white-space:nowrap}
+#doc .tedit textarea.raw{font:13px/1.5 var(--mono);min-height:8em;resize:vertical;overflow:auto;border:1px solid var(--line)}
+
+/* ----- the blocks of viewkit/components.js in the text column ----- */
+#doc .pv-callout,#doc .pv-stats,#doc .pv-tabs,#doc .pv-toggle,#doc .pv-cols,#doc .pv-figs,#doc .pv-table,#doc .pv-grid,#doc .pv-chart{margin:1.2em 0}
+#doc .pv-callout{font-size:.94em}
+#doc :is(.pv-table,.pv-grid,.pv-chart,.pv-tabs>.tablist,.pv-stats .l){font-family:var(--sans)}
+#doc .pv-stats .v{font-size:24px}
+#doc .pv-stats .l,#doc .pv-tabs>.tablist button,#doc .pv-toggle>summary{font-family:var(--sans)}
+#doc .pv-code{position:relative}
 #doc hr{border:0;border-top:1px solid var(--border);margin:2em 0}
 #doc .footnotes{font-size:.9em;color:var(--muted)}
 mark.c{background:var(--hl);color:inherit;cursor:pointer;transition:background .3s}
@@ -82,6 +148,17 @@ button.pin::before{content:"💬"}
 #doc .block-edit textarea{font:13px/1.5 ui-monospace,Menlo,monospace;min-height:0;resize:vertical}
 @media (max-width:860px){#doc .xblk,#doc .eblk{right:0}#doc .eblk{right:22px;top:.2em}}
 
+/* ----- the Aa menu: the fonts of the page (fontMenu in viewer.js) ----- */
+#fontBtn{font-size:11px;padding:0 8px;line-height:18px}
+#fontMenu{position:fixed;z-index:20;background:var(--panel);border:1px solid var(--border);padding:10px 12px;font:12px var(--ui);
+  color:var(--fg);box-shadow:0 8px 24px rgba(0,0,0,.4);display:grid;grid-template-columns:auto auto;gap:8px 12px;align-items:center}
+#fontMenu[hidden]{display:none}
+#fontMenu .lab{color:var(--muted)}
+#fontMenu .seg{display:flex;gap:0}
+#fontMenu .seg button{font-size:11.5px;padding:2px 9px;margin-left:-1px}
+#fontMenu .seg button.on{background:var(--accent);border-color:var(--accent);color:var(--bg)}
+#fontMenu .note{grid-column:1/-1;color:var(--muted);font-size:11px}
+
 /* ----- contents (left) ----- */
 #toc{grid-column:1;font:12px/1.4 var(--ui);position:sticky;top:57px;align-self:flex-start;
   max-height:calc(100vh - 73px);overflow:auto}
@@ -102,14 +179,6 @@ body.notoc.hastoc #tocShow{display:block}
 #doc h1,#doc h2,#doc h3,#doc h4,#doc h5,#doc h6{scroll-margin-top:64px}
 @media (max-width:1180px){main{grid-template-columns:180px minmax(0,1fr) 300px}}
 
-/* ----- watermark: Codex Seraphinianus figures down the left and right columns (see wmInit in viewer.js) ----- */
-.wmfig{position:fixed;z-index:-1;pointer-events:none;background:var(--accent);opacity:.22;
-  -webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;-webkit-mask-size:contain;mask-size:contain;-webkit-mask-position:center;mask-position:center}
-.wmfig[hidden]{display:none}
-#wmvote{position:fixed;left:-99px;top:0;z-index:30;font:12px var(--ui);color:var(--fg);background:var(--panel);border:1px solid var(--border);
-  padding:2px 7px;pointer-events:none;opacity:0;transition:opacity .15s}
-body.wm-hover{cursor:pointer}
-body.wm-hover #wmvote,#wmvote.flash{opacity:1}
 /* ----- sidebar ----- */
 aside{grid-column:3;font:12px/1.5 var(--ui);position:sticky;top:57px;align-self:flex-start;
   max-height:calc(100vh - 73px);overflow:auto}
@@ -265,6 +334,7 @@ body.chatopen aside{max-height:calc(100vh - 73px - var(--kit-chat-h,min(62vh,540
   <span id="counts"></span>
   <button id="tocBtn" type="button" hidden>Contents</button>
   <button id="foldBtn" type="button" hidden>Fold all</button>
+  <button id="fontBtn" type="button" title="Fonts of the page" aria-haspopup="true">Aa</button>
   <button id="undoBtn" type="button" title="Undo the last change made here (comment, suggestion, deleted block)">Undo</button>
   <button id="sideBtn" type="button">Comments</button>
   <span><span id="live"></span><span id="liveText">Live</span></span>
@@ -279,6 +349,7 @@ body.chatopen aside{max-height:calc(100vh - 73px - var(--kit-chat-h,min(62vh,540
   </aside>
 </main>
 <button id="tocShow" type="button" aria-label="Show the contents">☰</button>
+<div id="fontMenu" role="dialog" aria-label="Fonts" hidden></div>
 <button id="fab" hidden>💬 Comment</button>
 <dialog id="dlg">
   <form method="dialog">
@@ -311,6 +382,7 @@ body.chatopen aside{max-height:calc(100vh - 73px - var(--kit-chat-h,min(62vh,540
 <div id="toast"><span id="toastText"></span><button id="toastBtn" hidden></button></div>
 
 <script src="/kit/kit.js"></script>
+<script src="/kit/components.js"></script>
 <script src="/viewer.js"></script>
 </body>
 </html>

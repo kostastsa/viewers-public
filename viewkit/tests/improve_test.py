@@ -1,12 +1,12 @@
 """Test of the automatic loop of the self-improving apps, from the dashboard to the merge, in a real browser.
-One app at a time: pdfview, mdview or pyview (APPS below).
+One app at a time: pdfview, mdview, pyview or pageview (APPS below).
 
 It works on copies: for the app and for viewkit, a bare repository as origin and a clone of it as the live checkout,
 with the files of the real folders (also the files that are not committed). The notes go to a stand-in gh, and Claude
 is the stand-in of viewkit (tests/fake_claude.py): it asks one question first, then it adds a line to README.md in
 the app (committed) and in viewkit (not committed: the run commits it). The test runs no real Claude, makes no real
 issue, and never changes the real repositories. Needs Playwright and its Chromium. Run, in viewkit:
-    uv run --with playwright python tests/improve_test.py pdfview      (or mdview, or pyview)
+    uv run --with playwright python tests/improve_test.py pdfview      (or mdview, pyview, pageview)
 With --mono, it tests the layout of the public repository viewers with the local tracker: one repository with the app
 and viewkit as folders (one worktree and one branch for a proposal), the notes in localgh.py, and no push.
 It deletes its folder in tests/tmp at the end. Set VIEWKIT_KEEP_TMP=1 to keep it."""
@@ -32,6 +32,8 @@ APPS = {
                "port": "8816"},
     "pyview": {"src": "tests/fixture.py", "doc": "notes.py", "ready": ".cell", "focus": "h1, header", "sample": "cells.py",
                "port": "8817"},
+    "pageview": {"src": "examples/optimizers/optimizers.md", "doc": "notes.md", "ready": "#doc h1", "focus": "#main",
+                 "sample": "optimizers.md", "port": "8822"},
 }
 ARGS = [a for a in sys.argv[1:] if not a.startswith("--")]
 MONO = "--mono" in sys.argv

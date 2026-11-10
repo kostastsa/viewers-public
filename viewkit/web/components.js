@@ -772,18 +772,43 @@ const PV = (() => {
     if (t) { const h = el('div', 'ctitle pv-gen', t); body.prepend(h); e.removeAttribute('title'); }
     e.append(el('span', 'ic pv-gen', opt(e, 'icon') || CALLOUT_ICONS[kind]), body);
   }
+  // A stat card from each item "VALUE | LABEL | NOTE". The nodes of the item move into the card (they are not copied),
+  // so a viewer that maps the text to the source (mdview) keeps its comments and changes on them.
+  function statParts(li) {
+    // a "|" inside a longer text node becomes a text node of its own (the walker visits the new nodes too)
+    const w = document.createTreeWalker(li, NodeFilter.SHOW_TEXT);
+    for (let t; (t = w.nextNode());) {
+      const i = t.data.indexOf('|');
+      if (i < 0 || t.data === '|') continue;
+      const rest = t.splitText(i);
+      if (rest.data.length > 1) rest.splitText(1);
+    }
+    const parts = [[]];
+    for (const n of [...li.childNodes]) {
+      if (n.textContent.trim() === '|' && parts.length < 3) { parts.push([]); n.remove(); } else parts[parts.length - 1].push(n);
+    }
+    for (const p of parts) {  // drop the spaces at the edges of each part
+      while (p.length && !p[0].textContent.trim()) p.shift().remove();
+      while (p.length && !p[p.length - 1].textContent.trim()) p.pop().remove();
+    }
+    return parts;
+  }
   function stats(e) {
     const items = [...e.querySelectorAll(':scope > ul > li, :scope > ol > li')];
     if (!items.length) return;
     const grid = el('div', 'pv-stats');
     for (const li of items) {
-      const [v, l, n] = li.textContent.split('|').map(x => x.trim());
-      const card = el('div', 'stat');
-      const m = /^([+-]?[\d.,]+(?:[eE][+-]?\d+)?)\s*(.*)$/.exec(v || '');
-      const val = el('div', 'v');
-      if (m) { val.append(m[1]); if (m[2]) val.append(el('small', null, m[2])); } else val.textContent = v || '';
-      card.append(el('div', 'l', l || ''), val);
-      if (n) card.append(el('div', 's', n));
+      const [v = [], l = [], n = []] = statParts(li);
+      const card = el('div', 'stat'), val = el('div', 'v'), lab = el('div', 'l');
+      const t = v.length === 1 && v[0].nodeType === 3 ? v[0].data : null;
+      const m = t != null && /^([+-]?[\d.,]+(?:[eE][+-]?\d+)?)\s*(.*)$/.exec(t);
+      if (m && m[2]) {  // one text node: the unit in small type
+        v[0].data = m[1];
+        val.append(v[0], el('small', null, m[2]));
+      } else val.append(...v);
+      lab.append(...l);
+      card.append(lab, val);
+      if (n.length) { const s = el('div', 's'); s.append(...n); card.append(s); }
       grid.append(card);
     }
     e.replaceChildren(grid);
@@ -891,7 +916,9 @@ const PV = (() => {
 
   // ------------------------------------------------------------ enhance a rendered page
   // ctx: {file, data(src) -> Promise<{columns, rows}>, cellThreads(anchor) -> [ids], cellClick(anchor, td, text),
-  //       toast(msg), theme() -> 'light' | 'dark'}
+  //       toast(msg), theme() -> 'light' | 'dark', keepTables, widgets}
+  // keepTables: true leaves the Markdown tables as pandoc wrote them (mdview styles them in place, so its comments and
+  // changes stay on the cells). widgets: false leaves a widget block as code (a viewer without the /widget route).
   async function enhance(root, ctx) {
     CTX = ctx;
     root.querySelectorAll('div.callout').forEach(callout);
@@ -908,7 +935,7 @@ const PV = (() => {
       if (img.alt) f.append(cap);
       p.replaceWith(f);
     }
-    root.querySelectorAll('pre.widget').forEach(widget);
+    if (ctx.widgets !== false) root.querySelectorAll('pre.widget').forEach(widget);
     root.querySelectorAll('pre:not(.widget)').forEach(codeCopy);
     root.querySelectorAll('img').forEach(img => {
       img.loading = 'lazy';
@@ -933,7 +960,7 @@ const PV = (() => {
           const o = tableOptions(e, model);
           e.replaceChildren(tableWidget(e, model, {...o, caption: cap.node, title: opt(e, 'title') || cap.title, wide: e.classList.contains('wide')}));
         }, err => { e.replaceChildren(errorBox(err.message)); }));
-      } else {
+      } else if (!ctx.keepTables) {
         const t = e.querySelector('table');
         if (!t) continue;
         const model = modelOfTable(t, 'table-' + (++n));
@@ -941,7 +968,7 @@ const PV = (() => {
         e.replaceChildren(tableWidget(e, model, {...o, caption: cap.node, title: opt(e, 'title') || cap.title, wide: e.classList.contains('wide')}));
       }
     }
-    for (const t of [...root.querySelectorAll('table')]) {
+    for (const t of ctx.keepTables ? [] : [...root.querySelectorAll('table')]) {
       if (t.closest('.pv-gen, .pv-table')) continue;
       const host = el('div', 'table pv-auto');
       if (t.dataset.pos) host.dataset.pos = t.dataset.pos;

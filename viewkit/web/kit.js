@@ -1054,5 +1054,110 @@ const kit = (() => {
     }, 2000);
   }
 
-  return {title, chatAttention, chatPanel, md, typeset, mathPrune, tab, iconURL, docTitle, crumbs, copyText, improveDash, previewBand};
+  // ------------------------------------------------------------ the watermark (artkit.py)
+  // Figures from /art/figures/ (manifest.json) down the left and right margins, drawn anew on every load as binary
+  // drawings (f.line, or the silhouette f.mask) in the accent color of the page. Each side gets a stack of single
+  // organisms cut from the Kunstformen plates (the old cut-out figures when the manifest has none). Each figure has one
+  // signed score on the server: +1 for each click, -1 for each double click. Its weight is exp(0.5 * score), the score
+  // limited to +-6, so liked figures come up more often and disliked ones rarely but not never.
+  //   cols()     the free margins now: [left, right], each {x, w} in px, or null. A margin under 100 px gets no figures.
+  //   isBg(t)    true when the element t is the empty background of the page (a click there may vote)
+  //   post(body) POST /api/art/vote with the header of the app; returns the JSON ({score})
+  //   top        the y of the first figure (default 66), toast(msg) for errors
+  // Without the art folder, the manifest is empty and nothing is drawn. The CSS is in kit.css (.kitWm, #kitWmVote).
+  const WM_STACK = 10, WM_MAXH = 300;  // WM_MAXH: the tallest a figure is drawn, in px
+  async function watermark({cols, isBg, post, top = 66, toast}) {
+    const ART = '/art/figures/';
+    let man, scores;
+    try {
+      const get = async url => (await fetch(url)).json();
+      [man, scores] = await Promise.all([get(ART + 'manifest.json'), get('/api/art/scores').catch(() => ({}))]);
+    } catch (e) { return; }  // no art folder: no watermark
+    if (!Array.isArray(man) || !man.length) return;
+    const organisms = man.filter(f => f.kind === 'organism');
+    const figs = organisms.length ? organisms : man.filter(f => f.kind === 'figure');
+    const used = new Set();
+    const draw = (list, n) => {  // a weighted draw without replacement
+      list = list.filter(f => !used.has(f.id));
+      const out = [];
+      while (out.length < n && list.length) {
+        const w = list.map(f => Math.exp(0.5 * Math.max(-6, Math.min(6, scores[f.id] || 0))));
+        let x = Math.random() * w.reduce((a, b) => a + b, 0), i = 0;
+        while (i < list.length - 1 && (x -= w[i]) >= 0) i++;
+        used.add(list[i].id);
+        out.push({f: list[i], s: scores[list[i].id] || 0});
+        list.splice(i, 1);
+      }
+      return out;
+    };
+    const sides = [draw(figs, WM_STACK), draw(figs, WM_STACK)], pool = sides.flat();
+    const root = document.documentElement, tip = h('div');
+    tip.id = 'kitWmVote';
+    document.body.appendChild(tip);
+    for (const it of pool) {
+      it.el = h('div', 'kitWm');
+      it.dx = 0.1 + 0.8 * Math.random();  // where it sits across the margin
+      const url = `url(${ART}${it.f.line || it.f.mask})`;
+      it.el.style.setProperty('-webkit-mask-image', url);
+      it.el.style.setProperty('mask-image', url);
+      document.body.appendChild(it.el);
+    }
+    // Stack the figures of each side from the top of its margin, as many as fit.
+    const layout = () => {
+      const H = root.clientHeight, cs = cols() || [];
+      pool.forEach(it => { it.el.hidden = true; });
+      sides.forEach((items, c) => {
+        const col = cs[c];
+        if (!col || col.w < 100) return;  // a narrow margin: no figures
+        let y = top;
+        for (const it of items) {
+          const k = Math.min((col.w - 8) / it.f.w, WM_MAXH / it.f.h), w = it.f.w * k, hh = it.f.h * k;
+          if (y + hh > H - 8) break;
+          Object.assign(it.el.style, {left: col.x + (col.w - w) * it.dx + 'px', top: y + 'px', width: w + 'px', height: hh + 'px'});
+          it.el.hidden = false;
+          y += hh + 28;
+        }
+      });
+    };
+    layout();
+    addEventListener('resize', layout);
+
+    // The figures sit behind the page, so they are hit-tested here: a click on the empty background over one is a
+    // +1, a double click -1. The pointer over a figure shows its score in a small box by the cursor.
+    const hit = ev => {
+      if (!isBg(ev.target)) return null;
+      return pool.find(it => {
+        if (it.el.hidden) return false;
+        const r = it.el.getBoundingClientRect();
+        return ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom;
+      });
+    };
+    const signed = s => (s > 0 ? '+' : '') + s;
+    const vote = async (it, v) => {
+      try {
+        it.s = (await post({id: it.f.id, vote: v})).score;
+        tip.textContent = signed(it.s);
+        tip.classList.add('flash');
+        setTimeout(() => tip.classList.remove('flash'), 1200);
+      } catch (e) { if (toast) toast(e.message); }
+    };
+    let timer = 0;
+    document.addEventListener('mousemove', ev => {
+      const it = hit(ev);
+      document.body.classList.toggle('kit-wm-hover', !!it);
+      if (it) tip.textContent = signed(it.s);
+      tip.style.left = Math.min(ev.clientX + 14, root.clientWidth - 60) + 'px';
+      tip.style.top = Math.min(ev.clientY + 14, root.clientHeight - 30) + 'px';
+    });
+    document.addEventListener('click', ev => {
+      const it = ev.button === 0 && hit(ev);
+      if (!it) return;
+      if (ev.detail === 1) timer = setTimeout(() => vote(it, 1), 260);  // wait: it may become a double click
+      else if (ev.detail === 2) { clearTimeout(timer); vote(it, -1); }
+    });
+    return {layout};
+  }
+
+  return {title, chatAttention, chatPanel, md, typeset, mathPrune, tab, iconURL, docTitle, crumbs, copyText, improveDash,
+    previewBand, watermark};
 })();
