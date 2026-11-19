@@ -1,0 +1,17 @@
+<section id="result" data-transition="slide">
+<h2>The best optimizer, from runs.csv</h2>
+<div class="stats" id="stats"></div>
+<p class="text rise" style="--i:3">The numbers come from the data file. When an experiment writes it again, this slide changes.</p>
+<div class="foot"><span>plateview example deck</span><span>3 / 5</span></div>
+<aside>These three cards read runs.csv with pv.watch. The slide has no copy of the numbers.</aside>
+<script>
+pv.watch('../demo/runs.csv', d => {
+  const r = pv.records(d).sort((a, b) => b.acc - a.acc), best = r[0], last = r[r.length - 1];
+  const card = (i, l, v, s) => `<div class="stat rise" style="--i:${i}"><p class="l">${l}</p><p class="v">${v}</p><p class="s">${s}</p></div>`;
+  document.getElementById('stats').innerHTML =
+    card(0, 'Best', best.acc.toFixed(1) + ' %', best.optimizer + ', SD ' + best.acc_sd) +
+    card(1, 'Worst', last.acc.toFixed(1) + ' %', last.optimizer) +
+    card(2, 'Runs', r.length, 'optimizers, five seeds each');
+});
+</script>
+</section>

@@ -10,6 +10,7 @@ If `~/tools/viewers/viewkit/docs/self-improving-apps.md` exists, read it the fir
 - A **note** is an issue with the label `note`: a GitHub issue of the repository of the app, or an issue of the local tracker (section "The tracker and the layout"). The user writes it in the dashboard of the app (⌘/Ctrl+Shift+.). Claude writes it with `APP note "..."`.
 - A **proposal** is one change for one note, on the branch `improve/note-N` (N is the issue number), with passed tests.
 - The **principles** are the design rules of the user: `~/tools/viewers/viewkit/PRINCIPLES.md` and `~/tools/viewers/APP/PRINCIPLES.md`.
+- The **structural errors** are in `~/tools/viewers/viewkit/ERRORS.md`: errors of the viewers, the kit and the improver that can occur again, each with a rule. Obey these rules. If the file does not exist, continue without it.
 - Only the user puts a change into the app.
 - **The automatic loop** (version 2, with viewkit changes since version 3): the user writes notes in the dashboard of the app (⌘/Ctrl+Shift+.) and clicks Send all. Each note starts a background run (`~/tools/viewers/viewkit/improverun.py`). The run calls this skill in the modes `implement`, `change` and `learn` (section "Background modes"). Then it runs the tests and opens a preview tab with Accept, Change… and Reject. The run, not Claude, pushes, merges and closes the issue. The interactive commands below stay for the notes from Claude and for the notes that the automatic loop did not finish (label `question`).
 
@@ -49,7 +50,7 @@ The working directory is the worktree of the app for note N (`~/tools/viewers/wt
    - **Scope: all the viewers.** Put the change into `../viewkit` when the feature is shared (the chat panel, the dashboard, the tab, the kit styles), so that all the viewers get it. Change the app only for its own wiring.
    - **Scope: only APP.** Change only the app. If the app needs a new part of the kit, make it an option. The other viewers do not use the option, so they do not change.
    - No scope line (an old note): use "all the viewers" for a shared feature, else "only APP".
-2. Read `../viewkit/PRINCIPLES.md`, `PRINCIPLES.md` if it exists, `README.md`, `improve.json` (the tests), and the `CLAUDE.md` files that apply.
+2. Read `../viewkit/PRINCIPLES.md`, `PRINCIPLES.md` if it exists, `../viewkit/ERRORS.md` if it exists, `README.md`, `improve.json` (the tests), and the `CLAUDE.md` files that apply.
 3. **Decide.** Do not edit in these cases:
    - The note is not clear, or it has more than one good solution.
    - The note touches the security rules.
@@ -59,7 +60,7 @@ The working directory is the worktree of the app for note N (`~/tools/viewers/wt
    If `git log main..HEAD` here or in `../viewkit` shows commits, an earlier run started the work: continue from it.
 4. Make the change. One change only. Keep the diff small. Follow the principles and the style of the code. Update the README in STE if the behavior changes.
 5. Add a test for the change in the test file of the app. For a bug, see the test fail before the fix.
-6. Run the tests of `improve.json`. The run tests again after you. If the kit changed, the run also tests all the other viewers against the new kit (`../viewkit/improve.json`, "apps"). A failed test stops the proposal. For a kit change, update `../viewkit/README.md` in STE.
+6. Run the tests of `improve.json`. If a test command cannot start (for example, "command not found" or no browser), do not commit: say it in the last message (`ERRORS.md`, E10). The run tests again after you. If the kit changed, the run also tests all the other viewers against the new kit (`../viewkit/improve.json`, "apps"). A failed test stops the proposal. For a kit change, update `../viewkit/README.md` in STE.
 7. Commit in the app: `git add -A` and `git commit -m "CHANGE" -m "Note: #N"`. Do not commit in `../viewkit`: the run commits it (you cannot run git there). In `viewers`, `git add -A` in the app also adds the changes in `../viewkit`, and that is correct. Do not push. Do not change labels. Do not close the issue.
 8. **Last message:** the summary for the preview, in STE, three short lines or fewer: what changed, where to see it in the app, and "all the viewers" if the kit changed. Plain text, no heading. The first line is also the commit message, so make it a short title.
 
@@ -82,7 +83,7 @@ The working directory is `~/tools/viewers/viewkit`. DECISION is `accepted after 
 
 ## Triage
 
-1. **Read the rules.** Read `~/tools/viewers/viewkit/PRINCIPLES.md`, `~/tools/viewers/APP/PRINCIPLES.md` if it exists, the `README.md` of the app (its tests), `~/tools/viewers/viewkit/README.md`, and the `CLAUDE.md` files that apply.
+1. **Read the rules.** Read `~/tools/viewers/viewkit/PRINCIPLES.md`, `~/tools/viewers/APP/PRINCIPLES.md` if it exists, `~/tools/viewers/viewkit/ERRORS.md` if it exists, the `README.md` of the app (its tests), `~/tools/viewers/viewkit/README.md`, and the `CLAUDE.md` files that apply.
 2. **Read the inbox.** Run `gh issue list -R REPO --label note --state open --json number,title,body,labels,comments`. Skip a note with the label `proposed` (it waits for the user) unless it has a new comment from the user. Read the comments of each note: a note with the label `question` or `rejected` can have an answer or a reason from the user.
 3. **Join the duplicates.** If two notes are about the same problem, comment on the newer one "Same as #M", close it, and work on #M.
 4. **Decide for each note.** Use the principles. Do one of these:

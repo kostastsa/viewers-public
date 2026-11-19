@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>pyview</title>
-<link rel="icon" type="image/png" href="/kit/icons/py.png">
+<link rel="icon" type="image/png" href="/kit/icons/py.png?v=2">
 <link rel="stylesheet" href="/kit/kit.css">
 <style>
 :root{--kit-shadow-btn:0 4px 18px #0005;--kit-shadow-box:0 8px 32px #0007;color-scheme:dark;--bg:#111214;--fg:#d6d9de;--muted:#80858d;--panel:#16181b;--border:#2a2d32;--accent:#8a9bd6;
@@ -75,6 +75,8 @@ body.noside.chatopen main{grid-template-columns:220px minmax(0,1fr) 320px}  /* k
 .chead button{opacity:0;padding:1px 6px;border-radius:3px}
 .cell:hover .chead button,.cell.sel .chead button,.cell.running .chead button{opacity:.8}
 .chead button:hover{opacity:1;background:var(--hl)}
+.chead button.hid{opacity:.8;color:var(--accent);cursor:pointer;font-size:11px}
+.chead button.hid:hover{text-decoration:underline}
 .badge{font-size:11px;border-radius:2px;padding:0 6px;background:var(--panel);border:1px solid var(--border)}
 .badge.edited{color:var(--run);border-color:var(--run)}
 .badge.running{color:var(--run);border-color:var(--run)}
@@ -118,6 +120,10 @@ body.noside.chatopen main{grid-template-columns:220px minmax(0,1fr) 320px}  /* k
 .md hr{border:0;border-top:1px solid var(--border)}
 .md mjx-container[display="true"]{overflow-x:auto;overflow-y:hidden;max-width:100%}
 .md.empty{color:var(--muted);font-style:italic}
+/* a message of the improver (the summary in the card of a preview, kit.previewBand, and a question in the dashboard,
+   kit.improveDash): the mono font of the card, not the font of a markdown cell */
+.kitPreviewSum .md,.kitDashQ .md{font:inherit;padding:0}
+.kitPreviewSum .md p{margin:.3em 0}
 .cell.mdc .chead .title{display:none}
 .cell.mdc.thr .md{box-shadow:inset 3px 0 0 var(--hl2)}
 

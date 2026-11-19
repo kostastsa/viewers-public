@@ -1,0 +1,5 @@
+{"title": "Optimizers on CIFAR-10 (deck)",
+ "order": ["cover", "setup", "result", "curves", "figure"],
+ "sections": {"s1": {"description": "The question and the set-up", "start": "cover"},
+              "s2": {"description": "The results, from the live data", "start": "result"}},
+ "format": {"shared": ["deck.css"]}}

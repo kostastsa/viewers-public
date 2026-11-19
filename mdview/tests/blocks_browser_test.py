@@ -26,6 +26,10 @@ md = tmp / "blocks.md"
 # a tracked change in a cell, and a table in a quote (not a plain pipe table: it opens as text)
 src = md.read_text().replace("|         93.4 |", "| {~~93.4~>93.5~~} |", 1)
 src += "\n> | a | b |\n> |---|---|\n> | 1 | 2 |\n"
+# task items: tight, nested, with a comment, loose, and a ☐ character that is not a task
+TASKS = ("\n- [ ] Buy *milk*\n  - [x] A nested task\n- [x] {==Send==}{>>@you: To whom?<<} the report\n"
+         "\n1. ☐ Not a task\n\n- [ ] A loose task\n\n- [x] The last task\n")
+src += TASKS
 md.write_text(src)
 env = dict(os.environ, MDVIEW_PORT=PORT, VIEWKIT_ART=str(tmp / "no-art"))
 url = subprocess.run([sys.executable, MDVIEW, str(md), "--no-open"], env=env, capture_output=True, text=True,
@@ -120,6 +124,37 @@ try:
         rel = str(md.relative_to(Path.home()))
         r = pg.request.get(f"{base}/api/data?f={rel}&src=../../mdview.py").status  # the cookie of the page, no console error
         check("the data route reads only the data files of the document", r == 404, r)
+
+        # --- task items: a tickbox that one click changes in the file
+        def wait_ticked(n, secs=5):
+            end = time.time() + secs
+            while time.time() < end:
+                if pg.locator("#doc input.tick:checked").count() == n:
+                    return True
+                time.sleep(0.1)
+            return False
+
+        ticks = pg.locator("#doc input.tick")
+        check("each task item shows a tickbox with the state of the file (a ☐ character in the text is not one)",
+              ticks.evaluate_all("cs => cs.map(c => c.checked)") == [False, True, True, False, True],
+              ticks.evaluate_all("cs => cs.map(c => c.checked)"))
+        check("a tickbox looks clickable (a hand pointer)", ticks.first.evaluate("c => getComputedStyle(c).cursor") == "pointer")
+        before = md.read_text()
+        ticks.nth(0).click()
+        check("one click ticks the task in the file", wait_file(lambda s: "- [x] Buy *milk*" in s))
+        check("the click changes only that mark", md.read_text() == before.replace("- [ ] Buy *milk*", "- [x] Buy *milk*"))
+        pg.locator("#doc input.tick").nth(2).click()
+        check("one click removes the tick, and the comment on the item stays",
+              wait_file(lambda s: "- [ ] {==Send==}{>>@you: To whom?<<} the report" in s))
+        pg.locator("#doc input.tick").nth(3).click()
+        check("a task with blank lines between the items works too", wait_file(lambda s: "- [x] A loose task" in s))
+        check("the page shows the new ticks", wait_ticked(4))
+        check("a click on a tickbox does not open the block editor", pg.locator(".block-edit").count() == 0)
+        for _ in range(3):
+            pg.locator("#undoBtn").click()
+            pg.wait_for_timeout(300)
+        check("Undo takes the ticks back", wait_file(lambda s: s == before), md.read_text()[-300:])
+        check("the page shows the ticks of the file again", wait_ticked(3))
 
         # --- comments on words in a table cell and in a callout: CriticMarkup in the file, at the right place
         comment(pg, ".mdt", "seed 3 diverged", "Which seed?")

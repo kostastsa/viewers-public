@@ -13,7 +13,9 @@ data inside, which opens without the server.
 Usage:
     plateview new FILE.html [--allow DIR ...] [--title T]   make a plate from FILE ("-": stdin) and open it
     plateview FILE.html                                      the same, and the plate may read the folder of FILE
-    plateview update ID FILE.html                            change the HTML of a plate (the open tab reloads it)
+    plateview deck DIR [--allow DIR ...]                     make a plate of the deck in DIR (deck.json, slides/)
+    plateview DIR                                            the same, if DIR is a deck folder
+    plateview update ID FILE.html|DIR                        change the HTML of a plate (the open tab reloads it)
     plateview list [--json]                                  the plates, with their state
     plateview open ID                                        open a plate in the browser
     plateview keep ID | delete ID                            make a plate permanent, or delete it now
@@ -239,7 +241,8 @@ def reap(seen):
     return gone
 
 
-def make_plate(text, allow, title=None, base=None, owner=None, keep=False):
+def make_plate(text, allow, title=None, base=None, owner=None, keep=False, deck=None):
+    """A new plate. `deck`: the deck.json of a deck folder, which the plate follows (the text is build_deck of it)."""
     if len(text.encode("utf-8")) > HTML_MAX:
         raise PlateError(f"The plate is larger than {HTML_MAX // 1_000_000} MB.")
     pid = secrets.token_hex(6)
@@ -249,7 +252,136 @@ def make_plate(text, allow, title=None, base=None, owner=None, keep=False):
     meta = {"id": pid, "title": title or title_of(text) or "Plate", "created": now, "seen": 0,
             "allow": [str(Path(a).expanduser().resolve()) for a in allow],
             "base": str(Path(base or os.getcwd()).resolve()), "owner": owner, "kept": bool(keep), "used": []}
+    if deck:
+        meta.update(deck=str(deck), deck_state=deck_state(deck))
     write_html(pid, text)
+    write_meta(pid, meta)
+    return meta
+
+
+# --------------------------------------------------------------------------
+# Decks: a plate of slides, made from a deck folder (deck.json, a stylesheet, slides/ID.html)
+# --------------------------------------------------------------------------
+# A deck folder has deck.json ({"title", "order": [slide ids], "sections": {k: {"description", "start"}},
+# "format": {"shared": [stylesheets]}, "faces": {k: {"family", "src"?}}}), its stylesheets and slides/ID.html, each one
+# <section id=ID> of 1920 × 1080 px with its speaker notes in <aside>. build_deck makes one plate of it: the sections in
+# <main class="pv-deck">, in the order of deck.json. deck.js (added by plate_head) shows the slides. The plate of a
+# deck folder follows the folder: refresh_deck makes it again when a file of the folder changes.
+
+DECK_RE = re.compile(r"""<main\b[^>]*\bclass\s*=\s*["'][^"']*\bpv-deck\b""", re.I)
+FONT_TYPES = {".woff2": "font/woff2", ".woff": "font/woff", ".ttf": "font/ttf", ".otf": "font/otf"}
+
+
+def is_deck(text):
+    return bool(DECK_RE.search(text))
+
+
+def deck_json(path):
+    """The deck.json of a deck folder: DIR/deck.json or DIR/project/deck.json (the folder of a claude.ai deck), or None."""
+    p = Path(path).expanduser().resolve()
+    if p.is_file() and p.name == "deck.json":
+        return p
+    for c in (p / "deck.json", p / "project" / "deck.json"):
+        if c.is_file():
+            return c
+    return None
+
+
+def deck_files(dj):
+    """The files of a deck: deck.json, its stylesheets, its slides and its fonts, all that it is made of."""
+    root = dj.parent
+    try:
+        spec = json.loads(dj.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        raise PlateError(f"{dj} is not valid JSON: {e}")
+    if not isinstance(spec, dict):
+        raise PlateError(f"{dj} is not a deck (no object).")
+
+    def find(rel):  # a path of deck.json: relative to the deck folder, to the folder above it, or a name in it
+        for c in (root / rel, root.parent / rel, root / Path(rel).name):
+            if c.is_file():
+                return c.resolve()
+        return None
+
+    shared = (spec.get("format") or {}).get("shared") or []
+    css = [f for f in (find(s) for s in shared if isinstance(s, str)) if f]
+    if not shared and (root / "deck.css").is_file():
+        css = [(root / "deck.css").resolve()]
+    order = [s for s in spec.get("order") or [] if isinstance(s, str) and re.fullmatch(r"[\w.-]+", s)]
+    if not order:
+        order = sorted(p.stem for p in (root / "slides").glob("*.html"))
+    slides = [(s, root / "slides" / f"{s}.html") for s in order]
+    fonts = []
+    for face in (spec.get("faces") or {}).values():
+        if isinstance(face, dict) and isinstance(face.get("src"), str):
+            f = find(face["src"])
+            if f and f.suffix.lower() in FONT_TYPES:
+                fonts.append((face, f))
+    return spec, css, slides, fonts
+
+
+def deck_state(dj):
+    """A string that changes when a file of the deck changes."""
+    try:
+        _, css, slides, fonts = deck_files(dj)
+    except PlateError:
+        return file_state(dj)
+    files = [dj, *css, *(p for _, p in slides), *(f for _, f in fonts), dj.parent / "slides"]
+    return "|".join(file_state(p) for p in files)
+
+
+def build_deck(dj):
+    """One plate (HTML) of the deck of deck.json `dj`. A missing slide shows as a slide with the error."""
+    spec, css, slides, fonts = deck_files(dj)
+    title = str(spec.get("title") or dj.parent.name)
+    starts = {}
+    for sec in (spec.get("sections") or {}).values():
+        if isinstance(sec, dict) and isinstance(sec.get("start"), str):
+            starts[sec["start"]] = str(sec.get("description") or "")
+    style = []
+    for face, f in fonts:
+        b64 = base64.b64encode(f.read_bytes()).decode("ascii")
+        fam = str(face.get("family") or f.stem).replace("'", "")
+        w = str(face.get("weight") or "100 900")
+        style.append(f"@font-face{{font-family:'{fam}';font-weight:{w};font-display:block;"
+                     f"src:url(data:{FONT_TYPES[f.suffix.lower()]};base64,{b64})}}")
+    for f in css:
+        style.append(f"/* {f.name} */\n" + f.read_text(encoding="utf-8"))
+    body = []
+    for sid, p in slides:
+        try:
+            s = p.read_text(encoding="utf-8").strip()
+        except OSError:
+            s = (f'<section id="{html.escape(sid)}"><p class="pv-deck-missing">This deck has no slide '
+                 f'slides/{html.escape(sid)}.html.</p></section>')
+        if sid in starts:  # the first slide of a section of the deck: its description goes into the overview
+            s = re.sub(r"<section\b", lambda m: f'<section data-chapter="{html.escape(starts[sid])}"', s, count=1)
+        # An image of the deck folder: the deck runtime loads it through pv (a plate has no network and no files).
+        s = re.sub(r"""(<img\b[^>]*?)\ssrc\s*=\s*(["'])(?!data:|blob:|https?:|//)([^"']+)\2""",
+                   lambda m: f"{m.group(1)} data-pv-src={m.group(2)}{m.group(3)}{m.group(2)}", s, flags=re.I)
+        body.append(s)
+    w, h = spec.get("width") or 1920, spec.get("height") or 1080
+    return (f'<!doctype html>\n<html lang="en">\n<head>\n<title>{html.escape(title)}</title>\n'
+            f'<style>\n{chr(10).join(style)}\n</style>\n</head>\n<body>\n'
+            f'<main class="pv-deck" data-width="{int(w)}" data-height="{int(h)}">\n' + "\n".join(body) +
+            "\n</main>\n</body>\n</html>\n")
+
+
+def refresh_deck(pid, meta):
+    """Make the plate of a deck folder again if a file of the folder changed. Returns the meta (changed or not)."""
+    d = meta.get("deck")
+    if not d:
+        return meta
+    dj = Path(d)
+    state = deck_state(dj)
+    if state == meta.get("deck_state"):
+        return meta
+    try:
+        text = build_deck(dj)
+    except (OSError, PlateError):
+        return meta  # the folder is gone, or deck.json is half written: keep the plate as it is
+    write_html(pid, text)
+    meta = {**meta, "deck_state": state, "title": title_of(text) or meta["title"]}
     write_meta(pid, meta)
     return meta
 
@@ -494,11 +626,16 @@ def threads_json(data):
 _head_cache = {}
 
 
-def plate_head(export=False, bundle=""):
+TOKENS_END = "/* -- end of the tokens -- */"
+
+
+def plate_head(export=False, bundle="", deck=False):
     """The <style> and <script> blocks that go before the HTML of a plate. An export gets its CSP and its data (the
-    script `bundle`) first, so the pv library finds the data when it starts."""
-    files = [KIT / "web" / "components.css", HERE / "plate.css", KIT / "web" / "components.js", HERE / "runtime.js"]
-    key = tuple(file_state(f) for f in files)
+    script `bundle`) first, so the pv library finds the data when it starts. A deck gets only the tokens of plate.css
+    (its own stylesheet gives the look), and the deck runtime (deck.css, deck.js)."""
+    files = [KIT / "web" / "components.css", HERE / "plate.css", KIT / "web" / "components.js", HERE / "runtime.js",
+             HERE / "deck.css", HERE / "deck.js"]
+    key = (deck, *(file_state(f) for f in files))
     meta = f'<meta http-equiv="Content-Security-Policy" content="{CSP_EXPORT}">' if export else ""
     first = f'<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">{meta}{bundle}'
     if key in _head_cache:
@@ -512,11 +649,17 @@ def plate_head(export=False, bundle=""):
             continue  # the fallback fonts of the stylesheet
         fonts.append(f"@font-face{{font-family:'{fam}';font-weight:{w};font-style:normal;font-display:swap;"
                      f"src:url(data:font/woff2;base64,{b64}) format('woff2')}}")
-    css = "\n".join(fonts) + "\n" + files[0].read_text(encoding="utf-8") + "\n" + files[1].read_text(encoding="utf-8")
+    plate_css = files[1].read_text(encoding="utf-8")
+    if deck:
+        plate_css = plate_css.split(TOKENS_END)[0] + "\n" + files[4].read_text(encoding="utf-8")
+    css = "\n".join(fonts) + "\n" + files[0].read_text(encoding="utf-8") + "\n" + plate_css
     js = files[2].read_text(encoding="utf-8") + "\n" + files[3].read_text(encoding="utf-8")
+    if deck:
+        js += "\n" + files[5].read_text(encoding="utf-8")
     js = js.replace("</script", "<\\/script")
     out = f"<style>\n{css}\n</style>\n<script>\n{js}\n</script>\n"
-    _head_cache.clear()
+    if len(_head_cache) > 4:
+        _head_cache.clear()
     _head_cache[key] = out
     return first + out
 
@@ -566,7 +709,7 @@ def export_plate(pid, printing=False):
             raise PlateError(f"The export is larger than {EXPORT_MAX // 1_000_000} MB.")
     data = json.dumps(bundle, ensure_ascii=False, allow_nan=False).replace("</", "<\\/")
     bundle = f"<script>window.__PV_BUNDLE = {data};</script>\n" + (PRINT_JS if printing else "")
-    return compose(text, plate_head(export=True, bundle=bundle)), meta
+    return compose(text, plate_head(export=True, bundle=bundle, deck=is_deck(text))), meta
 
 
 # --------------------------------------------------------------------------
@@ -593,6 +736,10 @@ with --cell TABLE ROW COL for a table cell. Do this only when the user asks you 
 - Never edit the comments file. Change the plate or the data files only when the user asks you to.
 - The user may tell you which words or which table cell they selected. Use it to see what "this" means.
 - Every message starts with a line in brackets. It tells you the mode of that message. Follow the last one."""
+CHAT_DECK = """
+- This plate is a deck of slides, made from the deck folder <DECK> (deck.json, its stylesheet, slides/ID.html). To \
+change the deck, edit the files of that folder, not <FILE>. plateview makes the plate again from the folder. The rules \
+of a deck are in the section "Decks" of ~/tools/viewers/plateview/README.md."""
 # The mode goes into every message, not into the system prompt: a resumed session keeps the system prompt of its first turn.
 CHAT_MODE_EDIT = ("(Mode: you may change the plate, and answer or add comments, when the user asks. "
                   "Answer questions without changing anything.)")
@@ -715,6 +862,8 @@ class Chat:
             allowed, denied, perm = CHAT_TOOLS, ["NotebookEdit"], "acceptEdits"
         system = (CHAT_SYSTEM.replace("<FILE>", str(f)).replace("<ID>", pid).replace("<BASE>", meta.get("base") or "?")
                   .replace("<ALLOW>", ", ".join(meta.get("allow") or []) or "none"))
+        if meta.get("deck"):
+            system += CHAT_DECK.replace("<DECK>", str(Path(meta["deck"]).parent)).replace("<FILE>", str(f))
         cmd = claudekit.build_command(exe, mode + ctx + ("\n" if ctx else "") + text, system, sid, started, allowed,
                                       denied, perm) + ["--add-dir", str(plate_dir(pid))]
         err, stderr, code = claudekit.run_stream(cmd, work_dir(meta), claudekit.clean_env(), self.event, self.set_proc)
@@ -935,6 +1084,11 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == "/api/ping":
             return self.send_json(200, {"app": "plateview", "pid": os.getpid(), "started": STARTED,
                                         "code": str(Path(__file__).resolve())})
+        # The tab icons are open to all, like /api/ping (see serverkit.tab_icon).
+        a = serverkit.tab_icon(url.path, "plate.png")
+        if a is not None:
+            return self.send(200, a[0], a[1]) if a else self.send(404, "Not found")
+
         t = q.pop("t", [""])[0]
         if t and TOKEN and hmac.compare_digest(t, TOKEN):
             rest = urlencode(q, doseq=True)
@@ -954,7 +1108,7 @@ class Handler(BaseHTTPRequestHandler):
                 text = (plate_dir(pid) / "plate.html").read_text(encoding="utf-8")
             except (OSError, PlateError):
                 return self.send(404, "Not found", "text/plain; charset=utf-8")
-            return self.send(200, compose(text, plate_head()), csp=CSP_PLATE, frame="SAMEORIGIN")
+            return self.send(200, compose(text, plate_head(deck=is_deck(text))), csp=CSP_PLATE, frame="SAMEORIGIN")
         if url.path.startswith("/p/") and url.path.endswith("/print"):
             # The print view (⌘/Ctrl+P in the frame): the export of the plate in a tab of its own, with no network.
             try:
@@ -988,6 +1142,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(200, self.payload(meta))
             if url.path == "/api/version":  # also the sign that a tab shows the plate
                 self.app.touch(pid)
+                if meta.get("deck"):  # the plate of a deck folder follows the folder
+                    with self.app.lock:
+                        meta = refresh_deck(pid, read_meta(pid))
                 files = {}
                 for path in meta.get("used", []):
                     try:
@@ -1238,6 +1395,12 @@ def main():
     s.add_argument("--base", help="the folder for relative paths in the plate (default: the folder of FILE)")
     s.add_argument("--keep", action="store_true", help="make the plate permanent")
     s.add_argument("--no-open", action="store_true")
+    s = sub.add_parser("deck", help="make a plate of a deck folder (deck.json, slides/) and open it")
+    s.add_argument("dir", help="the deck folder: it has deck.json (or project/deck.json) and slides/")
+    s.add_argument("--allow", action="append", default=[], metavar="DIR",
+                   help="one more folder (or file) that the deck may read; the deck folder is always allowed")
+    s.add_argument("--keep", action="store_true", help="make the plate permanent")
+    s.add_argument("--no-open", action="store_true")
     s = sub.add_parser("update", help="change the HTML of a plate")
     s.add_argument("id")
     s.add_argument("file")
@@ -1279,6 +1442,8 @@ def main():
         return improvekit.try_main("plateview", HERE, argv[1:])
     if argv and argv[0].lower().endswith((".html", ".htm")) and Path(argv[0]).expanduser().is_file():
         argv = ["new"] + argv  # plateview FILE.html (also from Finder): a new plate, which may read the folder of FILE
+    elif argv and not argv[0].startswith("-") and argv[0] not in sub.choices and deck_json(argv[0]):
+        argv = ["deck"] + argv  # plateview DECK_FOLDER: a plate of the deck
     a = ap.parse_args(argv)
     port = a.port
     if a.serve:
@@ -1314,9 +1479,30 @@ def main():
                 print(url)
                 if not a.no_open:
                     webbrowser.open(url)
+        elif a.cmd == "deck":
+            dj = deck_json(a.dir)
+            if not dj:
+                sys.exit(f"plateview: {a.dir} is not a deck folder (no deck.json, no project/deck.json).")
+            meta = make_plate(build_deck(dj), [str(dj.parent), *a.allow], None, dj.parent, the_owner(), a.keep, deck=dj)
+            url = link(port, f"/p/{meta['id']}")
+            print(f"plateview: deck {meta['id']}  {meta['title']}  ({dj.parent})")
+            print(url)
+            if not a.no_open:
+                webbrowser.open(url)
         elif a.cmd == "update":
-            read_meta(a.id)
-            text, _ = read_source(a.file)
+            m = read_meta(a.id)
+            dj = deck_json(a.file) if Path(a.file).expanduser().is_dir() or a.file.endswith("deck.json") else None
+            if dj:  # the plate becomes the plate of this deck folder, and follows it
+                text = build_deck(dj)
+                m.update(deck=str(dj), deck_state=deck_state(dj))
+                if str(dj.parent) not in m["allow"]:
+                    m["allow"].append(str(dj.parent))
+                write_meta(a.id, m)
+            else:
+                text, _ = read_source(a.file)
+                if m.pop("deck", None):  # an HTML file: the plate no longer follows a deck folder
+                    m.pop("deck_state", None)
+                    write_meta(a.id, m)
             if len(text.encode("utf-8")) > HTML_MAX:
                 sys.exit(f"plateview: the plate is larger than {HTML_MAX // 1_000_000} MB.")
             write_html(a.id, text)
@@ -1358,6 +1544,8 @@ def main():
             print(f"plate {m['id']}  {m['title']}")
             print(f"html: {plate_html(m['id'])}")
             print(f"base: {m.get('base')}")
+            if m.get("deck"):
+                print(f"deck: {Path(m['deck']).parent}  (edit the slides there; the plate follows the folder)")
             for d in m.get("allow", []):
                 print(f"allow: {d}")
             for f in m.get("used", []):

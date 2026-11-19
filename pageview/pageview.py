@@ -838,6 +838,11 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(200, {"app": "pageview", "pid": os.getpid(), "root": str(app.root),
                                         "started": STARTED, "code": str(Path(__file__).resolve())})
 
+        # The tab icons are open to all, like /api/ping (see serverkit.tab_icon).
+        a = serverkit.tab_icon(url.path, "page.png")
+        if a is not None:
+            return self.send(200, a[0], a[1]) if a else self.send(404, "Not found")
+
         # A link from the pageview command carries the key as ?t=. Keep it as a cookie and reload without it, so it
         # does not stay in the address bar.
         t = q.pop("t", [""])[0]
@@ -1114,7 +1119,7 @@ class Handler(BaseHTTPRequestHandler):
                     f'alt=""><figcaption>{html.escape(e.name)}</figcaption></figure>' for e in imgs) + "</div>"
         return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>{html.escape(d.name or str(d))}/ · pageview</title>
-<link rel="icon" type="image/png" href="/kit/icons/page.png">
+<link rel="icon" type="image/png" href="/kit/icons/page.png?v=2">
 <style>
 :root{{color-scheme:light;--bg:#f6f6f3;--fg:#1c1f25;--muted:#646a74;--accent:#2c56c9;--hl:#fbe7a1;--line:#dcdbd4;--card:#fff}}
 @media (prefers-color-scheme:dark){{:root{{color-scheme:dark;--bg:#111317;--fg:#dde0e6;--muted:#8d939d;--accent:#8fa9f6;--hl:#4b4320;--line:#2b3038;--card:#181b21}}}}

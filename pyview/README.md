@@ -83,8 +83,11 @@ or a `.py` file of `viewkit` changes. Its log is `~/.cache/pyview/server.log`.
   *edited since run*). The **Discard** button throws the changes away. Ctrl+Shift+- splits the cell at the cursor.
 - **Cells:** the `+ Code` and `+ Markdown` buttons between cells add a cell. The 🗑 button deletes a cell. The ⋯ menu of a cell
   moves it or changes its type. Every file change can be undone with **Undo**.
+- **Hide the code:** select a code cell and press `h`, or use **Hide the code** in the ⋯ menu. The cell then shows its title and
+  its output, but not its code. The head of the cell shows **code hidden**: click it, or press `h` again, to show the code.
+  Enter still opens the editor. The cell runs as before.
 - **Keys** (when no editor is open): ↑ ↓ select, Enter edit, Shift+Enter run and go on, `a` add above,
-  `b` add below, `m` markdown, `y` code.
+  `b` add below, `m` markdown, `y` code, `h` hide or show the code.
 - **Markdown cells** support headings, lists, tables, code, and maths (`$x^2$`, `$$ … $$`).
 - **Comment:** the **+** next to a code line, the 💬 button of a cell, or **+ comment** for the whole file.
   Reply, Edit, Delete and Resolve are in the sidebar. Resolve removes the lines and keeps the code.
@@ -96,8 +99,8 @@ or a `.py` file of `viewkit` changes. Its log is `~/.cache/pyview/server.log`.
 - **Improve pyview** (⌘/Ctrl+Shift+.): the dashboard of the notes to the app. A note is a problem or a wish about pyview itself, not about the file.
   - **New note** (right): write the note and press Enter (or **Add**). The note waits in **Notes to send** (left), with the file that is open. A click on a waiting note edits it, and **×** deletes it. **For: All viewers / Only pyview** is the scope of the note.
   - **Send all** sends each waiting note. Each note becomes a GitHub issue with the label `note`. Claude implements the notes one after the other, in the background.
-  - When the tests pass, a preview tab opens: the new version of pyview with copies of the file of the note and of the samples (`samples/`). The card at the top has **Accept** (merge, commit and push), **Change…** (tell Claude what to change) and **Reject** (close the note).
-  - **Status** (below) shows each run. A question of Claude, or a failure, shows its text and a box: **Answer** (or **Try again**) starts the work again.
+  - When the tests pass, a preview tab opens: the new version of pyview with copies of the file of the note and of the samples (`samples/`). The card at the top has **Accept** (merge, commit and push), **Change…** (tell Claude what to change) and **Reject** (close the note). The summary of Claude in the card has the mono font of the card.
+  - **Status** (below) shows each run. A question of Claude, or a failure, shows its text and a box: **Answer** (or **Try again**) starts the work again. The text has the mono font of the dashboard.
   - The protocol is in `viewkit/docs/self-improving-apps.md`. `VIEWKIT_AUTO_IMPROVE=0` turns the automatic loop off.
 - **Chat** (bottom right, or ⌘/Ctrl+S): talk to Claude about the notebook. Claude runs on the computer that serves the page (the
   panel says which) and keeps one saved conversation per notebook, in `.pyview/NAME.py.chat.json`.
@@ -136,6 +139,8 @@ df = pd.read_csv("big.csv", parse_dates=["t"])
 
 - A cell starts at `# %%` or `# %% Title`. A markdown cell starts at `# %% [markdown]`. Text
   before the first marker is cell 0 (it shows only if it holds code).
+- A code cell that starts at `# %% [hide]` or `# %% [hide] Title` shows its output and not its code. The tag is not part
+  of the title.
 - A **comment** is a block of `#>` lines. Above a code line, it is about that line. Directly under
   a `# %%` line, it is about the cell. Before the first cell and followed by a blank line, it is general.
 - A line `#> @name: text` starts a message. A line `#> text` starts the first message (by you),

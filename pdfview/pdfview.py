@@ -670,11 +670,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(200, {"app": "pdfview", "pid": os.getpid(), "root": str(app.root),
                                         "started": STARTED, "code": str(Path(__file__).resolve())})
 
-        # The tab icons are open to all, like /api/ping: Safari loads the tab icon without the cookie, and with a 403 it
-        # shows a letter (P) in place of the icon. The icons are fixed files of the kit, with no data of the user.
-        if url.path == "/favicon.ico" or url.path.startswith("/kit/icons/"):
-            name = "icons/pdf.png" if url.path == "/favicon.ico" else unquote(url.path[len("/kit/"):])
-            a = serverkit.kit_asset(name)
+        # The tab icons are open to all, like /api/ping (see serverkit.tab_icon).
+        a = serverkit.tab_icon(url.path, "pdf.png")
+        if a is not None:
             return self.send(200, a[0], a[1]) if a else self.send(404, "Not found")
 
         # A link from the pdfview command carries the key as ?t=. Keep it as a cookie and reload without it, so it
@@ -877,7 +875,7 @@ class Handler(BaseHTTPRequestHandler):
             rows.append(f'<li><a href="/view?f={quote(self.app.rel(e))}">📄 {html.escape(e.name)}</a>{badge}</li>')
         return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>{html.escape(d.name or str(d))}/ · pdfview</title>
-<link rel="icon" type="image/png" href="/kit/icons/pdf.png">
+<link rel="icon" type="image/png" href="/kit/icons/pdf.png?v=2">
 <style>
 :root{{color-scheme:dark;--bg:#111214;--fg:#d6d9de;--muted:#80858d;--accent:#8a9bd6;--hl:#3a3420}}
 @media (prefers-color-scheme:light){{:root{{color-scheme:light;--bg:#fafaf7;--fg:#222;--muted:#666;--accent:#2f6fde;--hl:#ffe58a}}}}

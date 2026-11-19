@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>texview</title>
-<link rel="icon" type="image/png" href="/kit/icons/tex.png">
+<link rel="icon" type="image/png" href="/kit/icons/tex.png?v=2">
 <link rel="stylesheet" href="/kit/kit.css">
 <link rel="stylesheet" href="/kit/pdfpages.css">
 <link rel="stylesheet" href="/vendor/codemirror/lib/codemirror.css">
@@ -59,7 +59,6 @@ body.nosrc #src,body.nosrc #split{display:none}
 #pages{flex:1;min-width:200px}
 aside{flex:0 0 320px;border-left:1px solid var(--border);overflow:auto;padding:8px 10px 20px;background:var(--panel);min-width:0}
 body.noside aside{display:none}
-body.noside.chatopen aside{display:block}
 nav{flex:0 0 220px;border-right:1px solid var(--border);overflow:auto;padding:8px 6px;background:var(--panel);min-width:0}
 body.nonav nav{display:none}
 nav h4{margin:4px 6px 8px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
@@ -195,6 +194,9 @@ aside .empty{color:var(--muted);padding:6px;line-height:1.5}
 .composer textarea:focus{border-color:var(--accent)}
 .composer .row{display:flex;gap:6px;justify-content:flex-end;margin-top:4px}
 .composer .row .hint{margin-right:auto;color:var(--muted);font-size:11px;align-self:center}
+/* a box comment: the box that you draw on a page (⌥ Option and drag), and the cross cursor of the box tool */
+.page .boxdraw{position:absolute;z-index:5;border:2px dashed var(--accent);background:rgba(120,160,255,.15);pointer-events:none}
+body.altdown .page,body.altdown .page .textLayer span{cursor:crosshair}
 /* the comment box of a new comment: next to the selected text, in the source or on a page */
 #pop{position:fixed;z-index:31;width:min(340px,calc(100vw - 16px));margin:0;padding:8px;background:var(--panel);
   border:1px solid var(--accent);border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,.45);box-sizing:border-box}
@@ -314,7 +316,7 @@ body.chatopen aside{padding-bottom:calc(var(--kit-chat-h,min(62vh,540px)) + 40px
     <div id="threads"></div>
   </aside>
 </main>
-<div id="selbar"><button id="cbtn" type="button" title="Comment on this place (⌘/Ctrl+Shift+M): the comment goes on its source line">💬 Comment</button><button id="srcbtn" type="button" title="Open the source at this place (or ⌘/Ctrl+click the page)">✎ Source</button></div>
+<div id="selbar"><button id="cbtn" type="button" title="Comment on this place (⌘/Ctrl+Shift+M): the comment goes on its source line. For an area (a figure, an equation), hold ⌥ Option and drag a box.">💬 Comment</button><button id="srcbtn" type="button" title="Open the source at this place (or ⌘/Ctrl+click the page)">✎ Source</button></div>
 <div id="edsel"><button id="edcbtn" type="button" title="Comment on the selected text (⌘/Ctrl+Shift+M)">💬 Comment</button></div>
 <div id="chat">
   <button id="chatOpen" type="button" title="Chat with Claude about this document (⌘/Ctrl+S)">Chat</button>

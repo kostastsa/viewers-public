@@ -429,6 +429,14 @@ function setSide(on) {
   setTimeout(() => { if (pv.zoom === 'fit') pv.layout(); else repaintMarks(); }, 0);
 }
 
+// The width of the contents column (px), from a drag on their right border. Saved for the next start.
+function setNavWidth(px) {
+  px = Math.min(480, Math.max(160, Math.round(+px) || 220));
+  document.querySelector('main').style.setProperty('--navw', px + 'px');
+  store('navw', px);
+}
+function navResized() { if (pv.zoom === 'fit') pv.layout(); else repaintMarks(); }  // the page column has a new width
+
 function setNav(on) {
   document.body.classList.toggle('nonav', !on);
   $('navBtn').classList.toggle('on', on);
@@ -693,6 +701,27 @@ $('darkBtn').onclick = () => setDark(!S.dark);
 $('undoBtn').onclick = undo;
 $('sideBtn').onclick = () => setSide(document.body.classList.contains('noside'));
 $('navBtn').onclick = () => setNav(document.body.classList.contains('nonav'));
+$('navGrip').addEventListener('pointerdown', ev => {
+  if (ev.button !== 0) return;
+  ev.preventDefault();
+  const g = $('navGrip'), w0 = $('nav').offsetWidth, x0 = ev.clientX;
+  g.setPointerCapture(ev.pointerId);
+  const move = e => setNavWidth(w0 + e.clientX - x0);
+  const up = () => {
+    g.removeEventListener('pointermove', move);
+    g.removeEventListener('pointerup', up);
+    g.removeEventListener('pointercancel', up);
+    document.body.classList.remove('kitResizing');
+    g.classList.remove('drag');
+    navResized();
+  };
+  document.body.classList.add('kitResizing');
+  g.classList.add('drag');
+  g.addEventListener('pointermove', move);
+  g.addEventListener('pointerup', up);
+  g.addEventListener('pointercancel', up);
+});
+$('navGrip').addEventListener('dblclick', () => { setNavWidth(220); navResized(); });
 $('generalBtn').onclick = () => compose({type: 'general'});
 $('resolveAllBtn').onclick = () => {
   const n = S.doc ? S.doc.threads.length : 0;
@@ -742,6 +771,7 @@ async function poll() {
   kit.tab({app: 'pdf'});
   setDark((stored('dark') ?? (matchMedia('(prefers-color-scheme: dark)').matches ? '1' : '0')) === '1');
   setSide(stored('side') !== 'off');
+  setNavWidth(stored('navw') ?? 220);
   setNav(stored('nav') === 'on');
   const z = stored('zoom');
   pv.zoom = z && z !== 'fit' && !isNaN(+z) ? +z : 'fit';

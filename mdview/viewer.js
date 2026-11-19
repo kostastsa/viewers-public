@@ -119,7 +119,13 @@ async function load(quiet) {
   }
 }
 
+// The changes of this page that the server did not answer yet. The version check above waits for them.
+let opsBusy = 0, opSeq = 0;
 async function op(body) {
+  opsBusy++; opSeq++;
+  try { return await sendOp(body); } finally { opsBusy--; opSeq++; }
+}
+async function sendOp(body) {
   let r;
   try {
     r = await fetch('/api/op', {method: 'POST', headers: {'Content-Type': 'application/json', 'X-MDView': '1'},
@@ -140,9 +146,13 @@ function setLive(on) {
 setInterval(async () => {
   if (document.hidden || !state) return;
   try {
+    if (opsBusy) return;
+    const seq = opSeq;
     const r = await fetch('/api/version?f=' + encodeURIComponent(FILE));
     const d = await r.json();
     setLive(r.ok);
+    // A change of this page writes the file before its answer comes back: that new version is not from another program
+    if (opsBusy || seq !== opSeq) return;
     if (r.ok && d.version && d.version !== state.version) {
       if (editing || dlg.open) pendingReload = true;
       else { await load(true); toast('Updated from file'); }
@@ -180,6 +190,7 @@ function renderDoc() {
   enrichDoc();
   lineStarts = [0];
   for (let i = 0; i < state.clean.length; i++) if (state.clean[i] === '\n') lineStarts.push(i + 1);
+  paintTicks();
   buildIndex();
   paintSuggestions();
   buildIndex();
@@ -775,6 +786,8 @@ docEl.addEventListener('click', e => {
     if (f && !f.dataset.g && getSelection().isCollapsed) { getSelection().selectAllChildren(f); return; }
   }
   if (!m || !getSelection().isCollapsed) return;
+  const hl = state.threads.find(t => String(t.id) === m.dataset.t && t.status === 'highlight');
+  if (hl) { e.stopPropagation(); highlightMenu(m, hl); return; }  // a highlight has no card: its menu opens
   setSidebar(true);
   const card = cardOf(m.dataset.t);
   if (card) { card.scrollIntoView({behavior: 'smooth', block: 'nearest'}); flash([card]); }
@@ -849,9 +862,35 @@ function addBlock(el, where) {
   area.placeholder = 'Write Markdown…';
 }
 
-// Double-click a block to edit it (not on a link, a comment highlight, a button or a suggestion).
+// A task item (`- [ ]` or `- [x]`) comes from pandoc as the character ☐ or ☒. Put a tickbox in its place.
+// One click on the tickbox writes the mark in the file. `at` is the place of the mark in the clean text.
+function paintTicks() {
+  for (const li of docEl.querySelectorAll('li')) {
+    const host = li.firstElementChild?.tagName === 'P' && !li.firstChild.data?.trim() ? li.firstElementChild : li;
+    const t = host.firstChild;
+    if (!t || t.nodeType !== 3 || !/^[☐☒] /.test(t.data)) continue;
+    const r = parsePos((t.nextElementSibling?.dataset.pos && t.nextElementSibling || host).dataset.pos);
+    if (!r) continue;
+    const m = /\[([ xX])\]\s*$/.exec(state.clean.slice(state.clean.lastIndexOf('\n', r[0] - 1) + 1, r[0]));
+    if (!m || (m[1] === ' ') !== (t.data[0] === '☐')) continue;  // not a task item of the file: the character stays
+    const cb = document.createElement('input');
+    cb.type = 'checkbox'; cb.className = 'tick'; cb.checked = m[1] !== ' ';
+    cb.title = 'Click to tick this task, or to remove the tick';
+    cb.dataset.at = r[0] - m[0].length + 1;
+    t.data = t.data.slice(2);
+    host.prepend(cb);
+    li.classList.add('task');
+  }
+}
+docEl.addEventListener('change', e => {
+  const cb = e.target;
+  if (!cb.classList?.contains('tick')) return;
+  op({op: 'tick', at: +cb.dataset.at, on: cb.checked}).then(ok => { if (!ok && cb.isConnected) cb.checked = !cb.checked; });
+});
+
+// Double-click a block to edit it (not on a link, a comment highlight, a button, a tickbox or a suggestion).
 docEl.addEventListener('dblclick', e => {
-  if (e.target.closest('a, button, mark.c, .math, .sg, mjx-container')) return;
+  if (e.target.closest('a, button, input, mark.c, .math, .sg, mjx-container')) return;
   const tw = e.target.closest('.mdt');
   if (tw && !e.target.closest('.mdt-bar')) { getSelection().removeAllRanges(); editTable(tw, cellAt(e.target)); return; }
   let el = e.target;
@@ -921,7 +960,7 @@ function applyFolds() {
     if ((l && l <= fold) || e.matches('section.footnotes')) fold = 0;
     e.classList.toggle('folded-away', fold > 0);
     if (fold) {  // count the comments hidden under the folded heading
-      e.querySelectorAll('mark.c, button.pin').forEach(m => counts.get(owner).add(m.dataset.t));
+      e.querySelectorAll('mark.c:not(.highlight), button.pin').forEach(m => counts.get(owner).add(m.dataset.t));
       continue;
     }
     if (l) {
@@ -1046,9 +1085,9 @@ function setToc(on) {
   toc = on;
   document.body.classList.toggle('notoc', !on);
   $('tocBtn').setAttribute('aria-pressed', String(on));
-  $('tocBtn').title = (on ? 'Hide' : 'Show') + ' the contents (⌘/Ctrl + Shift + \\)';
-  $('tocHide').title = 'Hide the contents (⌘/Ctrl + Shift + \\)';
-  $('tocShow').title = 'Show the contents (⌘/Ctrl + Shift + \\)';
+  $('tocBtn').title = (on ? 'Hide' : 'Show') + ' the contents (⌘/Ctrl + E)';
+  $('tocHide').title = 'Hide the contents (⌘/Ctrl + E)';
+  $('tocShow').title = 'Show the contents (⌘/Ctrl + E)';
   try { localStorage.setItem('mdview.toc', on ? 'on' : 'off'); } catch {}
 }
 $('tocBtn').onclick = () => setToc(!toc);
@@ -1169,7 +1208,7 @@ function actionsMenu(items) {
 
 function renderThreads() {
   editing = false;
-  const ts = state.threads;
+  const ts = state.threads.filter(t => t.status !== 'highlight');  // the highlights are only on the page
   const nOpen = ts.filter(t => t.status === 'open').length, gs = state.suggestions;
   kit.tab({app: 'md', open: nOpen});
   $('counts').textContent = [ts.length && `${nOpen} open · ${ts.length - nOpen} answered`,
@@ -1341,7 +1380,7 @@ function selectionToSource() {
   for (const x of maths) { s = Math.min(s, x.r[0]); e = Math.max(e, x.r[1]); }
   if (!(e > s)) return {error: "Couldn't work out where that text is in the file."};
   const clash = state.threads.find(t => !t.general && (t.e > t.s ? (t.s < e && s < t.e) : (s < t.s && t.s < e)));
-  if (clash) return {error: 'That text overlaps an existing comment. Reply to it instead.', thread: clash.id};
+  if (clash) return {error: clash.status === 'highlight' ? 'That text overlaps a highlight. Click the highlight to comment on it or to remove it.' : 'That text overlaps an existing comment. Reply to it instead.', thread: clash.id};
   return {s, e, quote: maths.length ? state.clean.slice(s, e) : parts.map(txt).join('')};
 }
 
@@ -1368,6 +1407,37 @@ function startComment() {
   openDialog(res, res.quote.length > 160 ? res.quote.slice(0, 160) + '…' : res.quote);
 }
 
+// ------------------------------------------------------------ highlights: words with no comment
+async function highlightSelection() {
+  const res = selectionToSource();
+  fab.hidden = true;
+  if (!res) return;
+  if (res.error) { toast(res.error); return; }
+  if (await op({op: 'highlight', s: res.s, e: res.e})) { getSelection().removeAllRanges(); undoToast('Highlighted'); }
+}
+
+// The menu of a highlight, at the clicked mark: Comment (the highlight becomes a comment) and Remove.
+function highlightMenu(mark, t) {
+  const was = openMenu?.dots === mark;
+  closeMenu();
+  if (was) return;
+  const menu = el('div', 'menu hmenu');
+  const quote = t.quote.replace(/\s+/g, ' ').trim();
+  menu.append(
+    btn('💬 Comment', () => { closeMenu(); openDialog({reply: t.id}, quote.length > 160 ? quote.slice(0, 160) + '…' : quote); }),
+    btn('Remove', () => { closeMenu(); op({op: 'resolve', id: t.id}).then(ok => ok && undoToast('Highlight removed')); }, 'danger'));
+  document.body.append(menu);
+  const r = mark.getBoundingClientRect(), h = menu.offsetHeight;
+  menu.style.left = Math.max(8, Math.min(r.left, innerWidth - menu.offsetWidth - 8)) + 'px';
+  menu.style.top = (r.bottom + h + 8 > innerHeight ? r.top - h - 2 : r.bottom + 2) + 'px';
+  mark.classList.add('open');
+  openMenu = {menu, dots: mark};
+  document.addEventListener('click', closeMenu);
+  document.addEventListener('keydown', menuKey);
+  addEventListener('scroll', closeMenu, true);
+  addEventListener('resize', closeMenu);
+}
+
 function openDialog(add, quote) {
   pendingAdd = add;
   $('dlgQuote').textContent = quote;
@@ -1385,7 +1455,9 @@ dlg.addEventListener('close', async () => {
   if (dlg.returnValue === 'ok' && text && add) {
     draft = text;
     const sent = askJoin($('cmtAsk').checked, text);
-    const body = add.general ? {op: 'general', text: sent} : {op: 'add', s: add.s, e: add.e, text: sent};
+    const body = add.general ? {op: 'general', text: sent}
+      : add.reply != null ? {op: 'reply', id: add.reply, text: sent}  // a highlight becomes a comment
+      : {op: 'add', s: add.s, e: add.e, text: sent};
     if (await op(body)) {
       draft = '';
       getSelection().removeAllRanges();
@@ -1414,9 +1486,11 @@ let fabTimer;
 document.addEventListener('selectionchange', () => { clearTimeout(fabTimer); fabTimer = setTimeout(placeFab, 120); });
 addEventListener('scroll', () => { if (!fab.hidden) placeFab(); }, {passive: true});
 fab.addEventListener('mousedown', e => e.preventDefault()); // keep the selection
-fab.addEventListener('click', startComment);
+$('cbtn').addEventListener('click', startComment);
+$('hbtn').addEventListener('click', highlightSelection);
 document.addEventListener('keydown', e => {
   if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'm') { e.preventDefault(); startComment(); }
+  if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'h') { e.preventDefault(); highlightSelection(); }
   if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.code === 'Backslash') { e.preventDefault(); setToc(!toc); }
   else if ((e.metaKey || e.ctrlKey) && e.key === '\\') { e.preventDefault(); setSidebar(!sidebar); }
 });
@@ -1492,7 +1566,7 @@ function setSidebar(on) {
   sidebar = on;
   document.body.classList.toggle('noside', !on);
   $('sideBtn').setAttribute('aria-pressed', String(on));
-  $('sideBtn').title = (on ? 'Hide' : 'Show') + ' the comments (⌘/Ctrl + \\)';
+  $('sideBtn').title = (on ? 'Hide' : 'Show') + ' the comments (⌘/Ctrl + D)';
   try { localStorage.setItem('mdview.sidebar', on ? 'on' : 'off'); } catch {}
 }
 $('sideBtn').onclick = () => setSidebar(!sidebar);

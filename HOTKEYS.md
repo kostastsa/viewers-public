@@ -12,6 +12,8 @@ This file lists the keys of the viewers. The first part gives the keys that many
 |---|---|---|
 | ⌘/Ctrl+S | Open the chat and put the cursor in its text box. In the text box, hide the chat. | All. In the source editor of `texview`, this key saves. |
 | ⌘/Ctrl+Shift+M | Write a comment on the selected text. | All |
+| ⌘/Ctrl+D | Show or hide the comments sidebar. On a Mac, use ⌘ in a text box. | All |
+| ⌘/Ctrl+E | Show or hide the contents. On a Mac, use ⌘ in a text box. | All that have contents (not `plateview`) |
 | ⌘/Ctrl+\\ | Show or hide the comments sidebar. | All |
 | ⌘/Ctrl+Shift+. | Open or close the dashboard of the notes to the app. | All |
 
@@ -70,6 +72,8 @@ A jump is a click on a link, a section of the contents, or a page number. A pinc
 | Key or click | Action |
 |---|---|
 | ⌘/Ctrl+Shift+\\ | Show or hide the contents. |
+| ⌘/Ctrl+Shift+H | Highlight the selected text. |
+| Click on a highlight | Open its menu: Comment and Remove. |
 | Double-click on a block | Edit the Markdown of the block. |
 | Alt+click on a fold button | Fold or unfold the section and its subsections. |
 | Esc | Close the ⋯ menu. |

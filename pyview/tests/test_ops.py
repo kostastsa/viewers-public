@@ -131,6 +131,27 @@ def test_resolve_all():
     assert pv.apply_op(out, {"type": "comment-resolve-all"}) == out  # nothing left: no change
 
 
+def test_hide():
+    lines, cells = cells_of(SRC)
+    assert not any(c.hide for c in cells)
+    out = pv.apply_op(SRC, {"type": "set-hide", "cell": 2, "hide": True})
+    assert "# %% [hide] Load\n" in out, out
+    lines2, cells2 = cells_of(out)
+    assert cells2[2].hide and cells2[2].title == "Load" and cells2[2].kind == "code"
+    assert pv.cell_hash(lines2, cells2[2]) == pv.cell_hash(lines, cells[2])  # the output stays with the cell
+    # the title and the type changes keep or drop the tag
+    assert "# %% [hide] New name\n" in pv.apply_op(out, {"type": "set-title", "cell": 2, "title": "New name"})
+    assert "# %% [markdown] Load\n" in pv.apply_op(out, {"type": "set-type", "cell": 2, "kind": "markdown"})
+    assert pv.apply_op(out, {"type": "set-hide", "cell": 2, "hide": False}) == SRC
+    assert cells_of("# %% [HIDE]\nx = 1\n")[1][1].hide and cells_of("# %% [hide]\nx = 1\n")[1][1].title == ""
+    for bad in (0, 1):  # cell 0 has no marker, and cell 1 is markdown
+        try:
+            pv.apply_op(SRC, {"type": "set-hide", "cell": bad, "hide": True})
+            raise AssertionError("set-hide must fail for cell %d" % bad)
+        except ValueError:
+            pass
+
+
 def test_align():
     old = [{"hash": "a"}, {"hash": "b"}, {"hash": "c"}]
     got = pv.align(old, ["a", "b2", "c"])

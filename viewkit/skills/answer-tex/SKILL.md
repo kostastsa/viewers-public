@@ -65,7 +65,9 @@ EOF
      more if the paragraph or the environment continues.
    - General comment: read as much of the document as the question needs. Start with the main file.
    - If the question is about how the PDF looks (a figure, a table, the layout), read the page of the compiled PDF:
-     `texview text MAIN --page N`, or the PDF in the build folder with the Read tool and its `pages` parameter.
+     `texview text MAIN --page N`. Or read the PDF next to the main file (the same name, `.pdf`) with the Read tool
+     and its `pages` parameter. texview copies its build there after each compile. Another tool (VS Code) can write
+     its own build there between two compiles, so `texview text` is the sure way to read what the page shows.
    - If the question is about a compile error or a warning, run `texview log MAIN`.
 5. **Answer each open thread**, in the order of the files and lines:
    - **Question:** answer it. Give `file:line` when you refer to other parts of the source.

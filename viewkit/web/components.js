@@ -237,9 +237,10 @@ const PV = (() => {
         menu.append(l);
       }
       menu.addEventListener('click', ev => ev.stopPropagation());
-      const r = b.getBoundingClientRect(), pr = box.getBoundingClientRect();
-      menu.style.left = Math.max(0, Math.min(r.left - pr.left, pr.width - 200)) + 'px';
-      menu.style.top = (r.bottom - pr.top + 4) + 'px';
+      // k: the layout px of one screen px (a scaled slide of a deck has k > 1)
+      const r = b.getBoundingClientRect(), pr = box.getBoundingClientRect(), k = box.offsetWidth / pr.width || 1;
+      menu.style.left = Math.max(0, Math.min((r.left - pr.left) * k, box.offsetWidth - 200)) + 'px';
+      menu.style.top = ((r.bottom - pr.top) * k + 4) + 'px';
       box.append(menu);
       setTimeout(() => document.addEventListener('click', function off() { if (menu) menu.remove(); menu = null; document.removeEventListener('click', off); }), 0);
     }
@@ -543,9 +544,9 @@ const PV = (() => {
           tfoot.append(tr);
         }
       }
-      if (hasGroups) table.style.setProperty('--h1', thead.rows[0].getBoundingClientRect().height + 'px');
+      if (hasGroups) table.style.setProperty('--h1', thead.rows[0].offsetHeight + 'px');
       const fr = [...tfoot.rows];
-      fr.forEach((row, i) => { const below = fr.slice(i + 1).reduce((a, x) => a + x.getBoundingClientRect().height, 0); row.querySelectorAll('td').forEach(td => { td.style.bottom = below + 'px'; }); });
+      fr.forEach((row, i) => { const below = fr.slice(i + 1).reduce((a, x) => a + x.offsetHeight, 0); row.querySelectorAll('td').forEach(td => { td.style.bottom = below + 'px'; }); });
     }
     table.addEventListener('click', ev => {
       const th = ev.target.closest('thead th[data-k]');
@@ -632,7 +633,7 @@ const PV = (() => {
     if (e.classList.contains('wide')) host.classList.add('wide');
     const tx = v => logX ? Math.log10(v) : v, ty = v => logY ? Math.log10(v) : v;
     function draw() {
-      const bw = box.getBoundingClientRect().width;
+      const bw = box.offsetWidth;  // the layout width: a scale (a slide of a deck) does not change it
       if (bw > 0) W = Math.max(320, Math.round(bw - 28));
       svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
       svg.replaceChildren();
@@ -734,9 +735,9 @@ const PV = (() => {
           tip.append(dv);
         }
         tip.hidden = false;
-        const br = box.getBoundingClientRect();
-        tip.style.left = Math.min(ev.clientX - br.left + 14, br.width - tip.offsetWidth - 6) + 'px';
-        tip.style.top = (ev.clientY - br.top - 18) + 'px';
+        const br = box.getBoundingClientRect(), k = box.offsetWidth / br.width || 1;
+        tip.style.left = Math.min((ev.clientX - br.left) * k + 14, box.offsetWidth - tip.offsetWidth - 6) + 'px';
+        tip.style.top = ((ev.clientY - br.top) * k - 18) + 'px';
       });
       hit.addEventListener('pointerleave', () => { tip.hidden = true; cur.setAttribute('visibility', 'hidden'); });
     }
@@ -754,7 +755,7 @@ const PV = (() => {
     box.pvRender = draw;
     if (typeof ResizeObserver !== 'undefined') {  // draw again when the width changes (a resize, a tab that opens)
       let last = 0;
-      new ResizeObserver(() => { const w = Math.round(box.getBoundingClientRect().width); if (w > 0 && Math.abs(w - last) > 8) { last = w; draw(); } }).observe(box);
+      new ResizeObserver(() => { const w = box.offsetWidth; if (w > 0 && Math.abs(w - last) > 8) { last = w; draw(); } }).observe(box);
     }
     return box;
   }

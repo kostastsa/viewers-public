@@ -194,6 +194,16 @@ const BRIDGE = {
     renderThreads();
   },
   draft(m) { if (S.comp && S.comp.type === 'new') { S.comp.rect = cleanRect(m.rect) || S.comp.rect; placePop(); } },
+  deck(m) {  // a deck (deck.js): the slide that it shows, its notes, and a request for the full screen
+    deck = deck || {slide: '', notes: false};
+    if (typeof m.slide === 'string') deck.slide = str(m.slide, 200);
+    if (typeof m.notes === 'boolean') deck.notes = m.notes;
+    if (m.full) {
+      const f = $('frame');
+      if (document.fullscreenElement) document.exitFullscreen();
+      else if (f && f.requestFullscreen) f.requestFullscreen().catch(e => toast('No full screen: ' + e.message));
+    }
+  },
   key(m) {  // a key of this page, pushed while the plate has the focus
     if (!['KeyS', 'KeyM', 'Period', 'Backslash', 'KeyP'].includes(m.code)) return;
     document.dispatchEvent(new KeyboardEvent('keydown', {code: m.code, key: str(m.key, 4), metaKey: !!m.meta,
@@ -201,6 +211,10 @@ const BRIDGE = {
   },
 };
 const sameCell = (x, y) => x.table === y.table && String(x.row) === String(y.row) && String(x.col) === String(y.col);
+let deck = null;  // a deck: {slide, notes}, from its messages
+const DECK_KEYS = ['ArrowRight', 'ArrowLeft', 'ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End', ' ',
+                   'n', 'N', 'g', 'G', 'f', 'F'];
+document.addEventListener('fullscreenchange', () => toPlate({op: 'deckfull', on: document.fullscreenElement === $('frame')}));
 
 // Tell the plate which comments to mark: their anchors, the selected thread, and the anchor of a new comment.
 function sendMarks() {
@@ -489,7 +503,9 @@ async function poll() {
       plateState = v.plate;
       files = {};
       $('err').classList.remove('on');
-      $('frame').src = `/p/${PID}/plate?theme=${stored('theme') || 'system'}&v=${Date.now()}`;
+      // a deck opens again at the same slide, with the notes as they were
+      const at = deck ? `&slide=${enc(deck.slide)}${deck.notes ? '&notes=1' : ''}` : '';
+      $('frame').src = `/p/${PID}/plate?theme=${stored('theme') || 'system'}${at}&v=${Date.now()}`;
       await loadMeta();
     } else {
       const changed = Object.keys(v.files).filter(p => p in files && files[p] !== v.files[p]);
@@ -595,7 +611,12 @@ document.addEventListener('keydown', ev => {
   if (mod && ev.code === 'Backslash') { ev.preventDefault(); setSide(document.body.classList.contains('noside')); return; }
   if (mod && !ev.shiftKey && !ev.altKey && ev.code === 'KeyP') { ev.preventDefault(); printPlate(); return; }
   if (mod || ev.altKey || typing(ev.target)) return;
-  if (ev.key === 'Escape' && S.comp) { ev.preventDefault(); cancel(); }
+  if (ev.key === 'Escape' && S.comp) { ev.preventDefault(); cancel(); return; }
+  // a deck: the keys of the slides work also when the focus is in this page, not in the plate
+  if (deck && !S.comp && DECK_KEYS.includes(ev.key) && !ev.target.closest('button, a, [tabindex]')) {
+    ev.preventDefault();
+    toPlate({op: 'deckkey', key: ev.key, shift: ev.shiftKey});
+  }
 });
 
 // ------------------------------------------------------------ notes to the app (self-improving apps)

@@ -62,6 +62,9 @@ To open files outside your home folder, restart it with a wider root: `MDVIEW_RO
 If port 8765 is taken, set `MDVIEW_PORT`.
 
 - **Comment:** select text, then click the 💬 Comment button that appears (or press ⌘/Ctrl+Shift+M).
+- **Highlight:** select text, then click **🖍 Highlight** (or press ⌘/Ctrl+Shift+H). It marks the words in green, with no comment.
+  A click on a highlight gives **💬 Comment** (the highlight becomes a comment) and **Remove**. Highlights are not open
+  comments: they are not in the sidebar, and **Resolve all** keeps them.
 - **General comment:** click **+ comment** at the top of the sidebar, for notes about the
   whole document. They're listed first in the sidebar, under General.
 - **Reply, resolve:** hover over a message in the sidebar and click its ⋯ for Reply, Resolve, Edit and Delete. Resolving removes
@@ -69,18 +72,19 @@ If port 8765 is taken, set `MDVIEW_PORT`.
   notification that appears.
 - **Live:** the page refreshes on its own when the file changes, for example when Claude edits it.
 - **Edit or delete a block:** hover a paragraph, heading, list, quote, table or code block. A ✎ in the right margin (or a double-click on the block) opens its Markdown in a text box (⌘/Ctrl+Enter saves, Esc cancels); a × deletes it. Both can be undone with **Undo** in the header.
+- **Tasks:** a list item that starts with `[ ]` or `[x]` (for example `- [ ] Write the tests`) shows a tickbox. One click on the tickbox writes `[x]` or `[ ]` in the file. **Undo** in the header takes it back.
 - **Tables:** each Markdown table shows in a card. The toolbar of the card gives the size of the table, **Edit**, and copies of the table as **MD**, **CSV** or **LaTeX**. Columns of numbers are aligned to the right, with digits of one width. Move the pointer on a column name and click **↕** to sort the rows: up, down, then the order of the file again. The sort changes only the view, never the file. Comments and suggested changes in a cell work as in the text.
   - **Grid editor:** double-click a cell (or click **Edit**, or ✎) to edit the table in a grid. Each cell holds its Markdown as in the file, also CriticMarkup. **Tab** goes to the next cell, **Enter** to the next row, and both add a row at the end. The buttons above a column change its alignment (– ⇤ ↔ ⇥), move it (◀ ▶), add a column after it (+), or delete it (×). The buttons at the left of a row move it (↑ ↓). They also add a row below it (+), or delete it (×). **Save** (or ⌘/Ctrl+Enter) writes a pipe table with aligned columns in place of the old table. **Undo** takes it back. **Markdown…** shows the text of the table, and **Grid** goes back to the grid.
   - A table that is not a plain pipe table (for example in a quote, or with a row that has more cells than the header) opens as Markdown text.
   - **Best values:** put the table in a block `::: {.table best="Accuracy:max Loss:min"}` … `:::` to mark the best value of these columns.
 - **Blocks:** mdview shows the blocks of pageview (`~/tools/viewers/pageview/SYNTAX.md`): callouts, stat cards, columns, tabs, toggles, figures, code with **Copy**, and tables and charts that read a CSV, TSV or JSON file (`::: {.table src="runs.csv"}`, `::: {.chart src="runs.csv" …}`). A data file must be next to the document or below its folder, or in a folder that you passed to mdview. The words of a block stay the words of the file, so comments, suggested changes and block editing work in blocks too. Widgets show as code. The sample `samples/blocks.md` shows all of them.
 - **Fonts:** **Aa** in the header chooses the font of the text (Sans, Serif or Mono) and of the headings (Serif, or as the text). It also chooses the font of the interface (Sans or Mono) and the size of the text. The default is the look of pageview: sans text, serif headings and a sans interface. The choice is for all files, and the browser keeps it. Each file keeps its own color.
-- **Hide comments:** **Comments** in the header (or ⌘/Ctrl+\\) hides the sidebar for plain reading;
+- **Hide comments:** **Comments** in the header (or ⌘/Ctrl+D, or ⌘/Ctrl+\\) hides the sidebar for plain reading;
   clicking a highlight brings it back. The choice is remembered.
 - **Contents:** the headings are listed on the left (for files with two or more). Click one to
   jump to it, unfolding it if needed; the section you're reading is highlighted, and a yellow
   number marks open comments in a section's own text. Hide it with **«** at its top, **Contents**
-  in the header or ⌘/Ctrl+Shift+\\; bring it back with the **☰** tab at the left edge (or the same
+  in the header, ⌘/Ctrl+E or ⌘/Ctrl+Shift+\\; bring it back with the **☰** tab at the left edge (or the same
   button or keys). The choice is remembered. It's hidden on narrow windows.
 - **Fold sections:** click the ▾ in the margin beside a heading to hide its section, subsections
   included (Alt-click folds or unfolds its subsections too). A folded heading shows how many
@@ -119,7 +123,7 @@ If port 8765 is taken, set `MDVIEW_PORT`.
   - You can also run `/answer-comments notes.md` yourself in Claude Code.
 - **Tab title and header:** the title is "NAME · CONTEXT", for example "report.md · thesis/ch2". The context is the Git repo of the file and the folder in it, or the parent folder outside a repo. When two open files have the same name and context, the context gets more folders. The header shows the same path. A click on the name copies the full path.
 - **Host name:** the links use `mdview.localhost`, not `127.0.0.1`. Each viewer has its own host name, so Safari can show its tab icon. Old links with `127.0.0.1` still work.
-- **Tab icon:** the browser tab shows the icon of the viewer: a blue M↓. An orange badge shows the number of open comments. A cyan dot shows that Claude works (chat or Oracle). A yellow dot shows that an answer waits for you.
+- **Tab icon:** the browser tab shows the icon of the viewer: a blue M↓. An orange badge shows the number of open comments. A cyan dot shows that Claude works (chat or Oracle). A yellow dot shows that an answer waits for you. The icon files (`/kit/icons/`, `/favicon.ico`) do not need the access key, because Safari loads the tab icon without the cookie. Safari shows only the icon, with no badge and no dot, because it does not show an icon that a script changes.
 - **Improve mdview** (⌘/Ctrl+Shift+.): the dashboard of the notes to the app. A note is a problem or a wish about mdview itself, not about the document.
   - **New note** (right): write the note and press Enter (or **Add**). The note waits in **Notes to send** (left), with the document that is open. A click on a waiting note edits it, and **×** deletes it. **For: All viewers / Only mdview** is the scope of the note.
   - **Send all** sends each waiting note. Each note becomes a GitHub issue with the label `note`. Claude implements the notes one after the other, in the background.
@@ -152,6 +156,8 @@ A sentence with a note attached to a point{>>like this<<} in it.
 ```
 
 New general comments are added at the end of the file.
+
+A highlight is marked text with no comment: `{==highlighted text==}`. `mdview FILE --list` shows it with the status `highlight`.
 
 Suggested changes use CriticMarkup too:
 

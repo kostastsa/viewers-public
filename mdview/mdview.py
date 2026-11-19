@@ -291,7 +291,9 @@ class Doc:
             m = AUTHOR_RE.match(body)
             author, text = (m.group(1), body[m.end():]) if m else (None, body)
             msgs.append({"span": (a, b), "author": author, "text": text.strip()})
-        status = "answered" if msgs and (msgs[-1]["author"] or "").lower() == "claude" else "open"
+        # {==text==} with no message is a highlight: marked words, not a comment
+        status = ("highlight" if not msgs else
+                  "answered" if (msgs[-1]["author"] or "").lower() == "claude" else "open")
         return {"start": start, "hl": hl, "end": end, "cs": cs, "ce": ce,
                 "msgs": msgs, "status": status, "general": False}
 
@@ -439,6 +441,13 @@ def apply_op(doc, op):
             src = settle(src, g, kind == "accept-all")
         return src
 
+    if kind == "tick":  # a click on the tickbox of a task item: `at` is the character between the brackets of `[ ]`
+        k = doc.from16(int(op.get("at", -1)))
+        if not 0 < k < len(doc.clean) - 1 or doc.clean[k - 1] != "[" or doc.clean[k + 1] != "]" or doc.clean[k] not in " xX":
+            raise OpError("That task no longer exists.")
+        o = doc.orig_start(k)
+        return src[:o] + ("x" if op.get("on") else " ") + src[o + 1:]
+
     if kind == "delete-block":
         a, b = block_span(doc, op)
         b = BLANK_LINES_RE.match(src, b).end()
@@ -481,7 +490,7 @@ def apply_op(doc, op):
         except (KeyError, ValueError, IndexError):
             raise OpError("That comment no longer exists.")
 
-    if kind == "add":
+    if kind in ("add", "highlight"):
         s, e = doc.from16(int(op["s"])), doc.from16(int(op["e"]))
         if not 0 <= s < e <= len(doc.clean) or not doc.clean[s:e].strip():
             raise OpError("Select some text first.")
@@ -489,7 +498,8 @@ def apply_op(doc, op):
             if t["general"]:
                 continue
             if (t["cs"] < e and s < t["ce"]) or (t["cs"] == t["ce"] and s < t["cs"] < e):
-                raise OpError("That text overlaps an existing comment. Reply to it instead.")
+                raise OpError("That text overlaps a highlight. Click the highlight to comment on it or to remove it."
+                              if not t["msgs"] else "That text overlaps an existing comment. Reply to it instead.")
         a, b = doc.orig_start(s), doc.orig_end(e)
         if any(g["start"] < b and a < g["end"] for g in doc.suggestions):
             raise OpError("That text has a suggested change. Accept or reject it first.")
@@ -497,6 +507,8 @@ def apply_op(doc, op):
             raise OpError("Comments inside code blocks aren't supported.")
         if BLANK_LINE_RE.search(src, a, b):
             raise OpError("A comment can't span more than one paragraph.")
+        if kind == "highlight":
+            return src[:a] + "{==" + src[a:b] + "==}" + src[b:]
         body = clean_comment(op.get("text"))
         return src[:a] + "{==" + src[a:b] + "==}{>>" + body + "<<}" + src[b:]
 
@@ -529,9 +541,10 @@ def apply_op(doc, op):
         return resolve_thread(src, thread())
 
     if kind == "resolve-all":
-        if not doc.threads:
+        comments = [t for t in doc.threads if t["msgs"]]  # the highlights stay
+        if not comments:
             raise OpError("There are no comments.")
-        for t in sorted(doc.threads, key=lambda t: t["start"], reverse=True):
+        for t in sorted(comments, key=lambda t: t["start"], reverse=True):
             src = resolve_thread(src, t)
         return src
 
@@ -953,6 +966,11 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(200, {"app": "mdview", "pid": os.getpid(), "root": str(app.root),
                                         "started": STARTED, "code": str(Path(__file__).resolve())})
 
+        # The tab icons are open to all, like /api/ping (see serverkit.tab_icon).
+        a = serverkit.tab_icon(url.path, "md.png")
+        if a is not None:
+            return self.send(200, a[0], a[1]) if a else self.send(404, "Not found")
+
         # A link from the mdview command carries the key as ?t=. Keep it as a cookie and
         # reload without it, so it doesn't stay in the address bar.
         t = q.pop("t", [""])[0]
@@ -1203,7 +1221,7 @@ class Handler(BaseHTTPRequestHandler):
             rows.append(f'<li><a href="/view?f={quote(self.app.rel(e))}">📄 {html.escape(e.name)}</a>{badge}</li>')
         return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>{html.escape(d.name or str(d))}/ · mdview</title>
-<link rel="icon" type="image/png" href="/kit/icons/md.png">
+<link rel="icon" type="image/png" href="/kit/icons/md.png?v=2">
 <style>
 :root{{--bg:#fafaf7;--fg:#222;--muted:#666;--accent:#2f6fde;--hl:#ffe58a}}
 @media (prefers-color-scheme:dark){{:root{{--bg:#1c1c1e;--fg:#e8e8e8;--muted:#9a9a9a;--accent:#6ea0ff;--hl:#6b5a1e}}}}
@@ -1229,7 +1247,7 @@ def text_page(p, lines=None):
     note = '<p class="cut">The file is too large to show in full.</p>' if cut else ""
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>{html.escape(p.name)} · mdview</title>
-<link rel="icon" type="image/png" href="/kit/icons/md.png">
+<link rel="icon" type="image/png" href="/kit/icons/md.png?v=2">
 <style>
 :root{{--bg:#fafaf7;--fg:#222;--muted:#888;--accent:#2f6fde;--hl:#fff3c4;--hl2:#ffe58a;--border:#ddd}}
 @media (prefers-color-scheme:dark){{:root{{--bg:#1c1c1e;--fg:#e8e8e8;--muted:#888;--accent:#6ea0ff;--hl:#3d3618;--hl2:#6b5a1e;--border:#444}}}}

@@ -5,11 +5,15 @@ Chromium, and pdftotext. Run:
 It deletes its temporary folder in tests/tmp at the end. Set PDFVIEW_KEEP_TMP=1 to keep it for debugging."""
 import json
 import os
+import http.server
 import shutil
+import signal
+import socket
 import stat
 import subprocess
 import sys
 import tempfile
+import threading
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
@@ -34,6 +38,40 @@ env = dict(os.environ, PATH=f"{bindir}:{os.environ['PATH']}", PDFVIEW_PORT=PORT,
            VIEWKIT_NOTES_QUEUE=str(queue), VIEWKIT_AUTO_IMPROVE="0",
            VIEWKIT_IMPROVE_DIR=str(tmp / "improve"))  # the automatic loop has its own test
 failures = []
+
+
+class FakeOllama(http.server.BaseHTTPRequestHandler):
+    """A stand-in for the Ollama server: the list of the models (one with tools, one without)."""
+
+    def do_GET(self):
+        body = json.dumps({"models": [{"name": "qwen-test:7b", "capabilities": ["completion", "tools"]},
+                                      {"name": "embed-test:latest", "capabilities": ["embedding"]}]}).encode()
+        self.send_response(200 if self.path == "/api/tags" else 404)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *a):
+        pass
+
+
+ollama = http.server.ThreadingHTTPServer(("127.0.0.1", 0), FakeOllama)
+threading.Thread(target=ollama.serve_forever, daemon=True).start()
+OLLAMA_URL = f"http://127.0.0.1:{ollama.server_address[1]}"
+MODEL_LOG = tmp / "model.log"
+env.update(OLLAMA_HOST=OLLAMA_URL, VIEWKIT_ACCOUNT_FILE=str(tmp / "accounts.json"), FAKE_CLAUDE_MODEL_LOG=str(MODEL_LOG))
+# The Ollama server of an SSH host: a stand-in ssh opens a fake Ollama server on the port of the tunnel.
+with socket.socket() as s:
+    s.bind(("127.0.0.1", 0))
+    TUNNEL_PORT = s.getsockname()[1]
+SSH_LOG = tmp / "ssh.log"
+env.update(VIEWKIT_SSH=str(HERE.parent.parent / "viewkit" / "tests" / "fake_ssh.py"), FAKE_SSH_LOG=str(SSH_LOG),
+           VIEWKIT_OLLAMA_SSH=f"testhost={TUNNEL_PORT}")
+
+
+def last_model():
+    return MODEL_LOG.read_text().splitlines()[-1] if MODEL_LOG.exists() else ""
 
 
 def check(name, cond, extra=""):
@@ -99,6 +137,28 @@ try:
         pg.locator("#outline a", has_text="Section 2").click()
         pg.wait_for_timeout(300)
         check("a contents entry goes to its page", pg.locator("#pageNum").input_value() == "2", pg.locator("#pageNum").input_value())
+        nav_w = "() => document.getElementById('nav').offsetWidth"
+        page_w = "() => document.querySelector('.page').offsetWidth"
+        nb, gb = pg.locator("#nav").bounding_box(), pg.locator("#navGrip").bounding_box()
+        check("the grip of the contents width is on their right border",
+              abs(gb["x"] + gb["width"] / 2 - (nb["x"] + nb["width"])) < 4 and gb["height"] >= nb["height"] - 2, (nb, gb))
+        w0, p0 = pg.evaluate(nav_w), pg.evaluate(page_w)
+        gx, gy = gb["x"] + gb["width"] / 2, gb["y"] + gb["height"] / 2
+        pg.mouse.move(gx, gy)
+        pg.mouse.down()
+        pg.mouse.move(gx + 90, gy, steps=5)
+        pg.mouse.move(gx + 180, gy, steps=5)
+        pg.mouse.up()
+        pg.wait_for_timeout(400)
+        w1, p1 = pg.evaluate(nav_w), pg.evaluate(page_w)
+        check("a drag on the right border of the contents changes their width, and the pages fit the new column",
+              w0 == 220 and w1 == 400 and p1 < p0, (w0, w1, p0, p1))
+        pg.reload()
+        pg.wait_for_selector('.page[data-n="1"] .textLayer span', timeout=20000)
+        check("the contents keep their width after a reload", pg.evaluate(nav_w) == 400, pg.evaluate(nav_w))
+        pg.locator("#navGrip").dblclick()
+        pg.wait_for_timeout(300)
+        check("a double-click on the border gives the default width", pg.evaluate(nav_w) == 220, pg.evaluate(nav_w))
         pg.locator("#navBtn").click()
         pg.locator("#pageNum").fill("1")
         pg.locator("#pageNum").press("Enter")
@@ -319,6 +379,37 @@ try:
         check("Ask only does not change the comments", len(comments()) == 4)
         pg.locator("#chatAsk").uncheck()
 
+        # --- a local Ollama model in the account selector of the chat (viewkit/claudekit.py)
+        check("a chat run of a Claude account does not use Ollama", last_model() == "- -", last_model())
+        sel = pg.locator("#chatBox .kitAcct")
+        opts = sel.locator("option").all_inner_texts()
+        check("the selector lists the Claude account and the Ollama model that can use tools",
+              sel.is_visible() and opts[0] == "claude" and [o for o in opts if o.startswith("ollama:")] == ["ollama:qwen-test:7b"], opts)
+        sel.select_option("ollama:qwen-test:7b")
+        pg.wait_for_timeout(500)
+        pg.locator("#chatText").fill("which model?")
+        pg.locator("#chatText").press("Enter")
+        pg.wait_for_function("() => document.querySelector('#chatSend').textContent === 'Send'", timeout=10000)
+        pg.wait_for_timeout(300)
+        check("the next chat run uses the Ollama model", last_model() == f"{OLLAMA_URL} qwen-test:7b", last_model())
+        # --- a model of the Ollama server of an SSH host, through the tunnel of the kit
+        check("the selector lists the model of the SSH host that can use tools",
+              [o for o in opts if o.startswith("ollama@")] == ["ollama@testhost:remote-test:27b"], opts)
+        check("the kit started one tunnel to the SSH host",
+              SSH_LOG.exists() and [l.split()[1] for l in SSH_LOG.read_text().splitlines()] == ["testhost"],
+              SSH_LOG.read_text() if SSH_LOG.exists() else "no ssh.log")
+        sel.select_option("ollama@testhost:remote-test:27b")
+        pg.wait_for_timeout(500)
+        pg.locator("#chatText").fill("which remote model?")
+        pg.locator("#chatText").press("Enter")
+        pg.wait_for_function("() => document.querySelector('#chatSend').textContent === 'Send'", timeout=10000)
+        pg.wait_for_timeout(300)
+        check("the next chat run uses the model of the SSH host, through the tunnel",
+              last_model() == f"http://127.0.0.1:{TUNNEL_PORT} remote-test:27b", last_model())
+        sel.select_option("ollama:qwen-test:7b")
+        pg.wait_for_timeout(500)
+        MODEL_LOG.unlink()
+
         # --- the text size of the chat: Cmd/Ctrl+= and - with the focus in the chat, or Ctrl+wheel on the chat
         CZOOM = "() => getComputedStyle(document.querySelector('#chatMsgs')).zoom"
         FS = "() => document.querySelector('#chatMsgs .cm').getBoundingClientRect().height"
@@ -358,6 +449,14 @@ try:
         pg.wait_for_timeout(500)
         check("the Oracle answered every open comment", all(t["msgs"][-1]["author"] == "claude" for t in comments())
               and "Answer from the fake Oracle" in pg.locator("#threads").inner_text())
+        check("the Oracle run uses the Ollama model too", last_model() == f"{OLLAMA_URL} qwen-test:7b", last_model())
+        pg.locator("#chatBox .kitAcct").select_option("claude")
+        pg.wait_for_timeout(500)
+        pg.locator("#chatText").fill("and now?")
+        pg.locator("#chatText").press("Enter")
+        pg.wait_for_function("() => document.querySelector('#chatSend').textContent === 'Send'", timeout=10000)
+        pg.wait_for_timeout(300)
+        check("after a change back to the Claude account, the run does not use Ollama", last_model() == "- -", last_model())
         check("a notice says that Claude answered, with a report",
               "Claude has answered the comments" in " ".join(pg.locator(".toast").all_inner_texts()))
         pg.locator(".toast button", has_text="Report").first.click()
@@ -678,13 +777,18 @@ try:
         check("the folder page lists the PDF with its open comments", "paper.pdf" in pg2.inner_text("body")
               and "open" in pg2.inner_text("body"), pg2.inner_text("body"))
         check("the folder page does not list the hidden comments folder", ".pdfview" not in pg2.inner_text("body"))
-        check("the folder page has the pdfview icon", 'href="/kit/icons/pdf.png"' in pg2.content()
+        check("the folder page has the pdfview icon", 'href="/kit/icons/pdf.png?v=2"' in pg2.content()
               and pg2.request.get(f"{BASE}/kit/icons/pdf.png").headers["content-type"] == "image/png")
         r = pg2.goto(f"{BASE}/pdf?f=" + str(side.relative_to(Path.home())))
         check("the server does not serve the hidden comments file", r.status == 404, r.status)
         b.close()
 finally:
     subprocess.run([sys.executable, PDFVIEW, "--stop"], env=env, capture_output=True)
+    for line in (SSH_LOG.read_text().splitlines() if SSH_LOG.exists() else []):  # the tunnel runs on its own
+        try:
+            os.kill(int(line.split()[0]), signal.SIGTERM)
+        except (OSError, ValueError):
+            pass
     if os.environ.get("PDFVIEW_KEEP_TMP"):
         print("kept", tmp)
     else:

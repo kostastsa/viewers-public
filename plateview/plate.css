@@ -28,6 +28,8 @@
   --hover: #1e2834; --plate: #ffffff;
   --c1: #82aaeb; --c2: #ef9467; --c3: #5fd09d; --c4: #cf98e6; --c5: #e9c84f; --c6: #f28bb1; --c7: #7fc0f5; --c8: #b6c47a;
   --shadow: 0 1px 2px rgba(0,0,0,.3), 0 6px 18px rgba(0,0,0,.25); color-scheme: dark }
+/* -- end of the tokens -- */
+/* A deck (deck.css) gets only the tokens above: its own stylesheet gives the look. */
 *, *::before, *::after { box-sizing: border-box }
 html, body { margin: 0 }
 body { background: var(--bg); color: var(--fg); font: 15px/1.5 var(--body); -webkit-font-smoothing: antialiased }

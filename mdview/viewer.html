@@ -4,13 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>mdview</title>
-<link rel="icon" type="image/png" href="/kit/icons/md.png">
+<link rel="icon" type="image/png" href="/kit/icons/md.png?v=2">
 <link rel="stylesheet" href="/kit/kit.css">
 <link rel="stylesheet" href="/kit/components.css">
 <style>
 :root[data-text="serif"]{--doc-font:Charter,"Iowan Old Style",Georgia,serif;--doc-size:18px;--doc-lh:1.72}
 :root[data-text="mono"]{--doc-font:var(--mono);--doc-size:15px;--doc-lh:1.65}
 :root[data-head="text"]{--head-font:var(--doc-font)}
+:root{--hl-mark:rgba(90,200,110,.28);--hl-mark2:rgba(90,200,110,.5);--hl-line:rgba(60,170,90,.85)}
 :root{color-scheme:dark;--bg:#111214;--fg:#d6d9de;--muted:#80858d;--panel:#16181b;--border:#2a2d32;--accent:#8a9bd6;
   --hl:#363c53;--hl2:#59648e;--ok:#1f3a2e;--ok2:#2f5a46;--claude:#1c1f23;--code:#131518;--warn:#e09c9c;
   --del:#e09c9c;--delbg:#33201f;--ins:#86c7a4;--insbg:#18281f;
@@ -107,6 +108,9 @@ mark.c{background:var(--hl);color:inherit;cursor:pointer;transition:background .
 mark.c.answered{background:var(--ok)}
 mark.c.hover,mark.c.flash{background:var(--hl2)}
 mark.c.answered.hover,mark.c.answered.flash{background:var(--ok2)}
+/* a highlight: words with no comment, in a soft green (as in pdfview) */
+mark.c.highlight,#doc .math.cm.highlight{background:var(--hl-mark)}
+mark.c.highlight.hover,mark.c.highlight.flash,mark.c.highlight.open,#doc .math.cm.highlight.hover,#doc .math.cm.highlight.open{background:var(--hl-mark2)}
 #doc .math.cm{background:var(--hl);cursor:pointer;transition:background .3s}
 #doc .math.cm.answered{background:var(--ok)}
 #doc .math.cm.hover,#doc .math.cm.flash{background:var(--hl2)}
@@ -126,6 +130,10 @@ button.pin::before{content:"💬"}
   border-radius:0;padding:1px 8px;margin-left:10px;vertical-align:middle;white-space:nowrap}
 #doc .folded.has-open::after{background:var(--hl)}
 @media (max-width:860px){#doc .fold{margin-left:0}}
+
+/* a task item: a tickbox in place of the bullet, one click writes the file */
+#doc li.task{list-style:none}
+#doc input.tick{margin:0 .45em 0 -1.4em;width:1em;height:1em;vertical-align:-.1em;accent-color:var(--accent);cursor:pointer}
 
 /* delete a block: an x in the right margin, shown on hover */
 #doc>[data-pos]{position:relative}
@@ -263,7 +271,9 @@ button.primary{background:var(--accent);border-color:var(--accent);color:var(--b
 .msg .tag{font-size:10px;padding:0 5px;margin-right:5px;background:var(--hl);white-space:nowrap;vertical-align:1px}
 
 /* ----- floating comment button, dialog, toast ----- */
-#fab{position:fixed;z-index:6;font:13px var(--ui);padding:6px 10px;box-shadow:0 4px 16px rgba(0,0,0,.18)}
+#fab{position:fixed;z-index:6;white-space:nowrap;box-shadow:0 4px 16px rgba(0,0,0,.18)}
+#fab button{font:13px var(--ui);padding:6px 10px}
+#fab #hbtn{margin-left:-1px;border-color:var(--hl-line)}
 dialog{border:1px solid var(--border);border-radius:0;background:var(--panel);color:var(--fg);
   width:min(440px,92vw);font:14px var(--ui)}
 dialog::backdrop{background:rgba(0,0,0,.3)}
@@ -350,7 +360,7 @@ body.chatopen aside{max-height:calc(100vh - 73px - var(--kit-chat-h,min(62vh,540
 </main>
 <button id="tocShow" type="button" aria-label="Show the contents">☰</button>
 <div id="fontMenu" role="dialog" aria-label="Fonts" hidden></div>
-<button id="fab" hidden>💬 Comment</button>
+<div id="fab" hidden><button id="cbtn" type="button" title="Comment on the selected text (⌘/Ctrl+Shift+M)">💬 Comment</button><button id="hbtn" type="button" title="Highlight the selected text, with no comment (⌘/Ctrl+Shift+H)">🖍 Highlight</button></div>
 <dialog id="dlg">
   <form method="dialog">
     <q id="dlgQuote"></q>

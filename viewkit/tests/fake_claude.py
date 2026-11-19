@@ -4,6 +4,7 @@ pdfview and texview. The prompt can contain: SLOW (the answer takes a few second
 for a PDF it adds a comment with `pdfview add`; for a .tex file it suggests "tight" -> "sharp" with `texview suggest`),
 FAIL (it exits with an error).
 With FAKE_CLAUDE_ACCOUNT_LOG, each run writes its CLAUDE_CONFIG_DIR (or "-") to that file.
+With FAKE_CLAUDE_MODEL_LOG, each run writes its ANTHROPIC_BASE_URL and ANTHROPIC_MODEL (or "-") to that file.
 The file is found in the system prompt of the app: pyview says "the file PATH (a .py file)", mdview and pdfview say
 "the file PATH.".
 A run of the self-improving loop has the prompt '/improve MODE APP N': for implement and change it adds a line to
@@ -26,6 +27,9 @@ if os.environ.get("FAKE_CLAUDE_LOG"):
 if os.environ.get("FAKE_CLAUDE_ACCOUNT_LOG"):  # the account of the run (claudekit.clean_env)
     with open(os.environ["FAKE_CLAUDE_ACCOUNT_LOG"], "a") as f:
         f.write((os.environ.get("CLAUDE_CONFIG_DIR") or "-") + "\n")
+if os.environ.get("FAKE_CLAUDE_MODEL_LOG"):  # the Ollama model of the run (claudekit.ollama_env), or "- -"
+    with open(os.environ["FAKE_CLAUDE_MODEL_LOG"], "a") as f:
+        f.write((os.environ.get("ANTHROPIC_BASE_URL") or "-") + " " + (os.environ.get("ANTHROPIC_MODEL") or "-") + "\n")
 prompt = args[args.index("-p") + 1]
 if prompt.startswith("/improve "):  # a run of the self-improving loop (improverun.py), in the worktree of a note
     words = prompt.split()

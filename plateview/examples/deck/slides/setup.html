@@ -1,0 +1,21 @@
+<section id="setup" data-transition="fade">
+<h2>The set-up</h2>
+<div class="row">
+<div class="diagram">
+<div class="node do" style="left:0; top:145px"><b>Optimizer</b><span>do(o): six choices</span></div>
+<div class="node" style="left:400px; top:0"><b>Learning rate</b><span>tuned for each o</span></div>
+<div class="node" style="left:400px; top:290px"><b>Seed</b><span>five for each o</span></div>
+<div class="node" style="left:800px; top:145px"><b>Accuracy</b><span>after 30 epochs</span></div>
+<x-connector x1="300" y1="190" x2="400" y2="65" head="end"></x-connector>
+<x-connector x1="300" y1="230" x2="800" y2="210" head="end"></x-connector>
+<x-connector x1="700" y1="65" x2="800" y2="190" head="end"></x-connector>
+<x-connector x1="700" y1="355" x2="800" y2="230" head="end" dash="10 8"></x-connector>
+</div>
+<div class="col" style="width:500px">
+<div class="card rise" style="--i:0"><h3>Model</h3><p>ResNet-18, batch 128, 30 epochs.</p></div>
+<div class="card rise" style="--i:1"><h3>Measure</h3><p>Test accuracy: the mean and the SD over five seeds.</p></div>
+</div>
+</div>
+<div class="foot"><span>plateview example deck</span><span>2 / 5</span></div>
+<aside>The optimizer is the setting that we choose. The learning rate is tuned for each optimizer. The dashed arrow is the noise of the seed.</aside>
+</section>

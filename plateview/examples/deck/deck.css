@@ -1,0 +1,35 @@
+/* The look of the example deck. The numbers on the slides come from ../demo (invented data). */
+:root { --ink: #1C2733; --paper: #F7F5F0; --card: #FFFFFF; --line: #D8DDE3; --blue: #2357A4; --blue-soft: #E3EBF7;
+  --orange: #CF5F2F; --soft: #4F5B67 }
+body { font-family: var(--body); color: var(--ink) }
+section { background: var(--paper); color: var(--ink); padding: 120px 128px 160px; display: flex; flex-direction: column; gap: 40px }
+h1, h2, h3 { font-family: var(--display); font-weight: 600 }
+h2 { font-size: 68px; line-height: 1.1 }
+h3 { font-size: 34px; line-height: 1.2 }
+.eyebrow { font: 600 24px var(--mono); letter-spacing: 2px; color: var(--orange) }
+.foot { position: absolute; left: 128px; right: 128px; bottom: 60px; display: flex; justify-content: space-between;
+  font-size: 24px; color: var(--soft) }
+.row { display: flex; gap: 56px; align-items: flex-start }
+.col { display: flex; flex-direction: column; gap: 24px }
+.card { background: var(--card); border: 2px solid var(--line); border-radius: 16px; padding: 22px 28px; display: flex; flex-direction: column; gap: 8px }
+.card p, .text { font-size: 28px; line-height: 1.35; color: var(--soft) }
+.rise { animation: rise 520ms ease-out both; animation-delay: calc(var(--i, 0) * 130ms) }
+@keyframes rise { from { opacity: 0; transform: translateY(18px) } }
+.cover { background: var(--ink); justify-content: center }
+.cover .eyebrow { color: #F2B27E }
+.cover h1 { font-size: 104px; line-height: 1.05; color: var(--paper) }
+.cover .q { font-size: 44px; color: #F2B27E }
+.diagram { position: relative; width: 1100px; height: 420px }
+.node { position: absolute; width: 300px; height: 130px; box-sizing: border-box; border: 3px solid var(--ink);
+  border-radius: 16px; background: var(--card); display: flex; flex-direction: column; justify-content: center; padding: 16px 24px }
+.node b { font-size: 30px } .node span { font-size: 24px; color: var(--soft) }
+.node.do { border-color: var(--blue); background: var(--blue-soft) }
+x-connector { color: var(--ink); border-width: 3px }
+.stats { display: flex; gap: 40px }
+.stat { flex: 1; background: var(--card); border: 2px solid var(--line); border-radius: 16px; padding: 28px 32px }
+.stat .l { font-size: 26px; font-weight: 600; color: var(--soft) }
+.stat .v { font: 600 96px var(--display); color: var(--blue) }
+.stat .s { font-size: 24px; color: var(--soft) }
+.chart { width: 1660px }
+.key { display: flex; gap: 12px; align-items: center; font-size: 26px; color: var(--soft) }
+.dot { width: 26px; height: 26px; background: var(--orange) }

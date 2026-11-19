@@ -15,6 +15,7 @@ import subprocess
 import tempfile
 import threading
 import time
+import urllib.request
 import uuid
 from pathlib import Path
 
@@ -27,17 +28,22 @@ SESSION_VARS = {"CLAUDECODE", "CLAUDE_PID", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CO
                 "XPC_FLAGS"}
 
 
-def clean_env(drop_prefix=None, doc=None):
+def clean_env(drop_prefix=None, doc=None, local=True):
     """The environment of a run: ours, without the variables of the session that started the server.
     With `drop_prefix`, also without every variable that starts with it. CLAUDE_CONFIG_DIR is the account of the
-    document `doc` (see `account`)."""
+    document `doc` (see `account`). If the account is an Ollama model, the run uses that model (`ollama_env`).
+    With `local=False` it does not: the run uses Claude (the self-improving loop)."""
     env = {k: v for k, v in os.environ.items()
            if k not in SESSION_VARS and not (drop_prefix and k.startswith(drop_prefix))}
-    d = account(doc)[1]
+    name, d = account(doc)
     if d == DEFAULT_DIR:
         env.pop("CLAUDE_CONFIG_DIR", None)  # an explicit ~/.claude can use a different keychain entry: leave it out
     else:
         env["CLAUDE_CONFIG_DIR"] = str(d)
+    if local and is_ollama(name):
+        host, model = ollama_target(name)
+        url = ollama_url() if host is None else ssh_tunnel(host, wait=True)  # the tunnel can have stopped
+        env.update(ollama_env(model, url))
     return env
 
 
@@ -50,8 +56,155 @@ ACCOUNT_FILE = Path(os.environ.get("VIEWKIT_ACCOUNT_FILE") or Path.home() / ".co
 _START_DIR = os.environ.get("CLAUDE_CONFIG_DIR")
 
 
+def _start_dir():
+    return Path(_START_DIR).expanduser() if _START_DIR else DEFAULT_DIR
+
+
+# Ollama: a local model of Ollama is also an account, "ollama:MODEL". Its run is the same `claude -p`, with the same
+# tools and skills, but Claude Code sends its requests to the Anthropic-compatible route of the Ollama server
+# (OLLAMA_HOST, else 127.0.0.1:11434) in place of Anthropic. Its configuration folder is that of the server.
+# A model of the Ollama server of an SSH host is the account "ollama@HOST:MODEL". The hosts are in OLLAMA_FILE
+# ({"ssh": ["HOST", "HOST=PORT"]}) or in VIEWKIT_OLLAMA_SSH ("HOST,HOST=PORT"). For each host, the kit keeps one tunnel
+# `ssh -N -L 127.0.0.1:PORT:127.0.0.1:11434 HOST`, and the runs send their requests to http://127.0.0.1:PORT. The port is
+# fixed for each host, so the servers of all the apps share one tunnel, and a tunnel that the user opens is used too.
+OLLAMA = "ollama:"
+OLLAMA_SSH = "ollama@"
+OLLAMA_FILE = Path(os.environ.get("VIEWKIT_OLLAMA_FILE") or Path.home() / ".config" / "viewkit" / "ollama.json")
+SSH = os.environ.get("VIEWKIT_SSH") or "ssh"
+_ollama = {}  # {url: {"at": time, "models": [names]}}
+_tunnels = {}  # {host: {"proc": Popen, "at": time of the last start}}
+_tunnel_lock = threading.Lock()
+
+
+def is_ollama(name):
+    return bool(name) and (name.startswith(OLLAMA) or name.startswith(OLLAMA_SSH))
+
+
+def ollama_target(name):
+    """(host, model) of an Ollama account: host is None for the local server."""
+    if name.startswith(OLLAMA_SSH):
+        host, _, model = name[len(OLLAMA_SSH):].partition(":")
+        return host, model
+    return None, name[len(OLLAMA):]
+
+
+def ssh_hosts():
+    """The SSH hosts with an Ollama server, as {host: local port}."""
+    spec = os.environ.get("VIEWKIT_OLLAMA_SSH")
+    if spec is None:
+        try:
+            items = json.loads(OLLAMA_FILE.read_text()).get("ssh") or []
+        except (OSError, ValueError, AttributeError):
+            items = []
+    else:
+        items = spec.split(",")
+    out = {}
+    for item in items:
+        host, _, port = str(item).strip().partition("=")
+        if host and not host.startswith("-") and ":" not in host:
+            out[host] = int(port) if port.isdigit() else 11500 + int(hashlib.sha1(host.encode()).hexdigest(), 16) % 400
+    return out
+
+
+def _answers(url, timeout=0.5):
+    try:
+        with urllib.request.urlopen(url + "/api/version", timeout=timeout):
+            return True
+    except (OSError, ValueError):
+        return False
+
+
+def ssh_tunnel(host, wait=False):
+    """The URL of the Ollama server of `host`, through its tunnel. If the tunnel does not answer, start it (at most one
+    start in 30 seconds) and wait up to 3 seconds (10 with `wait`) for it."""
+    port = ssh_hosts().get(host) or 0
+    url = f"http://127.0.0.1:{port}"
+    if not port or _answers(url):
+        return url
+    with _tunnel_lock:
+        t = _tunnels.get(host) or {}
+        alive = t.get("proc") and t["proc"].poll() is None
+        if not alive and time.time() - t.get("at", 0) > 30:
+            log = Path.home() / ".cache" / "viewkit" / f"ollama-ssh-{host}.log"
+            log.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                with open(log, "a") as f:
+                    proc = subprocess.Popen(
+                        [SSH, "-N", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", "-o", "ExitOnForwardFailure=yes",
+                         "-o", "ServerAliveInterval=30", "-o", "ServerAliveCountMax=3",
+                         "-L", f"127.0.0.1:{port}:127.0.0.1:11434", host],
+                        stdin=subprocess.DEVNULL, stdout=f, stderr=f, start_new_session=True)
+                _tunnels[host] = {"proc": proc, "at": time.time()}
+            except OSError:
+                _tunnels[host] = {"proc": None, "at": time.time()}
+    end = time.time() + (10 if wait else 3)
+    while time.time() < end:
+        if _answers(url, 0.3):
+            break
+        p = (_tunnels.get(host) or {}).get("proc")
+        if p is None or p.poll() is not None:  # ssh stopped: no login, no network, or the port is taken
+            break
+        time.sleep(0.2)
+    return url
+
+
+def ollama_models(url=None):
+    """The models of the Ollama server at `url` (default: the local server) that can use tools, as names. No server:
+    an empty list. The answer is kept for 10 seconds."""
+    url = url or ollama_url()
+    c = _ollama.setdefault(url, {"at": 0.0, "models": []})
+    if time.time() - c["at"] > 10:
+        models = []
+        try:
+            with urllib.request.urlopen(url + "/api/tags", timeout=0.5) as r:
+                for m in json.loads(r.read()).get("models") or []:
+                    caps = m.get("capabilities")  # an old Ollama does not give them
+                    if m.get("name") and (caps is None or "tools" in caps):
+                        models.append(str(m["name"]))
+        except (OSError, ValueError, AttributeError):
+            pass
+        c.update(at=time.time(), models=sorted(models))
+    return list(c["models"])
+
+
+def ollama_url():
+    host = (os.environ.get("OLLAMA_HOST") or "127.0.0.1:11434").strip().rstrip("/")
+    if "://" not in host:
+        host = "http://" + host
+    scheme, rest = host.split("://", 1)
+    if ":" not in rest.rsplit("]", 1)[-1]:
+        rest += ":11434"
+    return f"{scheme}://{rest}".replace("://0.0.0.0:", "://127.0.0.1:")
+
+
+def remote_models(host, port):
+    """The models of the Ollama server of SSH host `host` that can use tools. The tunnel starts only when the list
+    is older than 10 seconds."""
+    url = f"http://127.0.0.1:{port}"
+    if time.time() - _ollama.get(url, {}).get("at", 0) > 10:
+        ssh_tunnel(host)
+    return ollama_models(url)
+
+
+def ollama_env(model, url=None):
+    """The variables that make `claude` use `model` of the Ollama server at `url` (default: the local server)."""
+    return {"ANTHROPIC_BASE_URL": url or ollama_url(), "ANTHROPIC_AUTH_TOKEN": "ollama", "ANTHROPIC_API_KEY": "",
+            "ANTHROPIC_MODEL": model, "ANTHROPIC_SMALL_FAST_MODEL": model, "ANTHROPIC_DEFAULT_HAIKU_MODEL": model,
+            "CLAUDE_CODE_SUBAGENT_MODEL": model, "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"}
+
+
 def accounts():
-    """The configuration folders, as {name: Path}: ~/.claude is "claude", ~/.claude-team is "claude-team"."""
+    """The accounts, as {name: Path}: the configuration folders (~/.claude is "claude", ~/.claude-team is
+    "claude-team"), then the local Ollama models ("ollama:MODEL"), then the models of the SSH hosts
+    ("ollama@HOST:MODEL"). An Ollama account has the folder of the server."""
+    out = _dirs()
+    out.update({OLLAMA + m: _start_dir() for m in ollama_models()})
+    for host, port in ssh_hosts().items():
+        out.update({f"{OLLAMA_SSH}{host}:{m}": _start_dir() for m in remote_models(host, port)})
+    return out
+
+
+def _dirs():
     out = {"claude": DEFAULT_DIR}
     for d in sorted(Path.home().glob(".claude-*")):
         if d.is_dir() and any((d / f).exists() for f in ("projects", ".claude.json", "settings.json")):
@@ -80,6 +233,8 @@ def account(doc=None):
     for name in (c["docs"].get(str(doc)) if doc else None, c["default"]):
         if name in acc:
             return name, acc[name]
+        if is_ollama(name):  # the Ollama server does not answer now: the run tells the error
+            return name, _start_dir()
     if _START_DIR:
         start = Path(_START_DIR).expanduser()
         for n, d in acc.items():
@@ -96,7 +251,8 @@ def account_api(method, body=None, doc=None):
         if name not in accounts():
             return 400, {"error": f"No such account: {name}"}
         set_account(doc, name, default=True)
-    return 200, {"account": account(doc)[0], "accounts": list(accounts())}
+    name, names = account(doc)[0], list(accounts())
+    return 200, {"account": name, "accounts": names if name in names else names + [name]}
 
 
 def set_account(doc, name, default=False):
@@ -122,7 +278,7 @@ def _projects(env):
 
 def session_files(sid):
     """The transcripts of session `sid` in all accounts, newest first."""
-    found = [f for d in accounts().values() for f in (d / "projects").glob(f"*/{sid}.jsonl")]
+    found = [f for d in _dirs().values() for f in (d / "projects").glob(f"*/{sid}.jsonl")]
     return sorted(found, key=lambda f: f.stat().st_mtime, reverse=True)
 
 
@@ -218,13 +374,17 @@ def run_stream(cmd, cwd, env, on_event, on_proc=None):
                                 start_new_session=True)
         if on_proc:
             on_proc(proc)
-        threading.Thread(target=lambda: stderr.append(proc.stderr.read()), daemon=True).start()
+        reader = threading.Thread(target=lambda: stderr.append(proc.stderr.read()), daemon=True)
+        reader.start()
         for line in proc.stdout:
             try:
                 on_event(json.loads(line))
             except ValueError:
                 continue
         proc.wait()
+        # The process can end before the thread has its stderr (a busy machine): wait for the thread. A child of
+        # claude can keep stderr open after claude ends, so the wait has a limit.
+        reader.join(timeout=5)
     except OSError as e:
         return f"Could not start claude: {e}", "", None
     return None, "".join(stderr), proc.returncode

@@ -343,7 +343,10 @@ try:
         else:
             check("Accept pushes both", rev(origin, "main") == rev(live, "main") and rev(kit_origin, "main") == rev(kit, "main"))
         check("Accept closes the issue", closed(n))
-        pv.wait_for_timeout(3000)
+        for _ in range(80):  # the page asks every 2 s and opens the live tab 1.5 s after "shipped"
+            if f":{PORT}/view" in pv.url:
+                break
+            pv.wait_for_timeout(100)
         check("the preview tab goes back to the live document", f":{PORT}/view" in pv.url, pv.url)
         pv.wait_for_timeout(3000)
         check("the worktrees, the sandbox and the branches are removed", not wt.exists()

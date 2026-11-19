@@ -65,6 +65,7 @@ const pv = kit.pdfPages({
   box: $('pages'), zoomLabel: $('zoomLabel'), pageNum: $('pageNum'), pageCount: $('pageCount'), outline: $('outline'),
   toast: msg => toast(msg),
   onZoom: z => store('zoom', String(z)),
+  skipClick: () => BOX.done,  // the end of a box drag is not a click on a link
 });
 
 async function loadPdf() {
@@ -982,6 +983,7 @@ function renderThreads() {
 // as fractions of the page box. The box follows a scroll or a zoom, and stays in its pane.
 function renderPop() {
   const old = $('pop'), c = S.comp;
+  if (BOX.frame && !(c && c.box === BOX.frame)) dropFrame();  // the frame of a box comment goes with its comment box
   if (!c || c.type !== 'new') { if (old) old.remove(); return; }
   if (old && old.comp === c) { placePop(); return; }  // keep the box as it is (the cursor, the focus)
   if (old) old.remove();
@@ -1211,6 +1213,74 @@ $('srcbtn').addEventListener('click', () => {
   $('selbar').style.display = 'none';
   if (ps) syncToSource(ps);
 });
+
+// ------------------------------------------------------------ the box: a comment on an area of a page (as in pdfview)
+// Hold ⌥ Option (the cursor becomes a cross) and drag: a box. The comment goes on the source line of the first text
+// in the box (SyncTeX), or of the middle of the box when it has no text (a figure). Esc during a drag stops it.
+// The frame stays on the page while the comment box is open (BOX.frame, in fractions of the page: it follows a zoom).
+const BOX = {drag: null, frame: null, done: false};
+function boxRect(ev) {
+  const r = BOX.drag.pg.el.getBoundingClientRect(), cl = (v, a, b) => Math.max(a, Math.min(b, v));
+  const x0 = cl(Math.min(BOX.drag.x, ev.clientX), r.left, r.right), x1 = cl(Math.max(BOX.drag.x, ev.clientX), r.left, r.right);
+  const y0 = cl(Math.min(BOX.drag.y, ev.clientY), r.top, r.bottom), y1 = cl(Math.max(BOX.drag.y, ev.clientY), r.top, r.bottom);
+  return {page: r, left: x0, right: x1, top: y0, bottom: y1};
+}
+function dropFrame() { if (BOX.frame) { BOX.frame.remove(); BOX.frame = null; } }
+$('pages').addEventListener('mousedown', ev => {
+  if (ev.button !== 0 || !ev.altKey || ev.metaKey || ev.ctrlKey) return;
+  const pg = pv.pageOf(ev.target);
+  if (!pg || pg.state !== 'done') return;
+  ev.preventDefault();  // no text selection
+  getSelection().removeAllRanges();
+  dropFrame();
+  const d = el('div', 'boxdraw');
+  pg.el.append(d);
+  BOX.drag = {pg, d, x: ev.clientX, y: ev.clientY};
+}, true);
+document.addEventListener('mousemove', ev => {
+  if (!BOX.drag) return;
+  const b = boxRect(ev), d = BOX.drag.d, pc = (v, w) => (100 * v / w) + '%';
+  Object.assign(d.style, {left: pc(b.left - b.page.left, b.page.width), top: pc(b.top - b.page.top, b.page.height),
+                          width: pc(b.right - b.left, b.page.width), height: pc(b.bottom - b.top, b.page.height)});
+});
+document.addEventListener('mouseup', async ev => {
+  if (!BOX.drag) return;
+  const {pg, d} = BOX.drag, b = boxRect(ev);
+  BOX.drag = null;
+  BOX.done = true;
+  setTimeout(() => { BOX.done = false; }, 0);
+  if (b.right - b.left < 6 || b.bottom - b.top < 6) { d.remove(); return; }  // a click, not a box
+  const words = [];
+  let first = null;  // the middle of the first text in the box
+  for (const g of pg.text.segs) {
+    if (g.br || !g.node.data.trim()) continue;
+    const r = g.node.parentElement.getBoundingClientRect(), cx = (r.left + r.right) / 2, cy = (r.top + r.bottom) / 2;
+    if (cx < b.left || cx > b.right || cy < b.top || cy > b.bottom) continue;
+    words.push(g.node.data);
+    if (!first) first = {x: cx, y: cy};
+  }
+  const at0 = first || {x: (b.left + b.right) / 2, y: (b.top + b.bottom) / 2};
+  const pt = {n: pg.n, x: (at0.x - b.page.left) * pg.w / b.page.width, y: (at0.y - b.page.top) * pg.h / b.page.height};
+  const quote = oneLine(words.join(' '));
+  const r = await sourceAt(pt);
+  if (!r || !r.file) { d.remove(); toast('No source line for this area.'); return; }
+  await openFile(r.file, r.line, true);
+  BOX.frame = d;
+  setChatSel({quote: quote.slice(0, 3000) || `[an area of page ${pg.n}]`, short: `p. ${pg.n} ▭`,
+              where: `an area of page ${pg.n} of the PDF, from ${r.file} near line ${r.line}`});
+  compose({type: 'new', box: d, where: `${r.file}:${r.line} (page ${pg.n}, area` + (quote ? `: “${quote.slice(0, 60)}”)` : ')'),
+           at: {page: pg.n, fx: (b.left - b.page.left) / b.page.width, fy: (b.bottom - b.page.top) / b.page.height},
+           anchor: {file: r.file, line: r.line}});
+});
+// the cross cursor while ⌥ Option is down (the pointer also tells it, for a key that went down in another window)
+const altClass = ev => document.body.classList.toggle('altdown', !!ev.altKey);
+addEventListener('keydown', altClass);
+addEventListener('keyup', altClass);
+document.addEventListener('mousemove', altClass, {passive: true});
+addEventListener('blur', () => document.body.classList.remove('altdown'));
+addEventListener('keydown', ev => {  // Esc stops a box drag, also with ⌥ Option still down
+  if (ev.key === 'Escape' && BOX.drag) { ev.preventDefault(); BOX.drag.d.remove(); BOX.drag = null; }
+}, true);
 
 // ------------------------------------------------------------ chat
 const chat = kit.chatPanel({

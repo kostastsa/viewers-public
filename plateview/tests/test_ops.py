@@ -1,5 +1,5 @@
 """Tests of plateview without a browser: plates, the files that a plate may read, the lifetime, the page of a plate,
-Export, the comments, the copy of a plate for the preview of a note, and the command line. Run: python3 tests/test_ops.py
+Export, the comments, the copy of a plate for the preview of a note, decks, and the command line. Run: python3 tests/test_ops.py
 It uses its own state folder in tests/tmp and deletes it at the end. Set PLATEVIEW_KEEP_TMP=1 to keep it."""
 import json
 import os
@@ -198,6 +198,54 @@ try:
     check("a missing plate gives a clear error", r.returncode != 0 and "There is no plate" in r.stderr, r.stderr)
     r = subprocess.run([sys.executable, PLATEVIEW, str(data / "demo.html"), "--no-open"], capture_output=True, text=True, env=env)
     check("plateview FILE.html is plateview new FILE.html", r.returncode == 0 and "plateview: plate " in r.stdout, r.stderr)
+
+    # ---- Decks: a deck folder (deck.json, a stylesheet, slides/) becomes one plate, which follows the folder
+    deck = tmp / "deckdir" / "project"  # the layout of a claude.ai deck: the files in project/
+    (deck / "slides").mkdir(parents=True)
+    (deck / "fonts").mkdir()
+    (deck / "fonts" / "Face.woff2").write_bytes(b"wOF2-test")
+    (deck / "deck.json").write_text(json.dumps({"title": "A deck", "order": ["b", "a", "gone"],
+        "sections": {"s1": {"description": "Part one", "start": "b"}}, "format": {"shared": ["project/deck.css"]},
+        "faces": {"f": {"family": "Face", "src": "fonts/Face.woff2"}, "g": {"family": "Web", "href": "https://x/y"}}}))
+    (deck / "deck.css").write_text("section { background: #fff }")
+    (deck / "slides" / "a.html").write_text('<section id="a"><h2>Slide A</h2><img src="fig/p.png" alt="p">'
+                                            '<img src="data:image/png;base64,AA" alt="d"><aside>Notes of A</aside></section>')
+    (deck / "slides" / "b.html").write_text('<section id="b"><h2>Slide B</h2></section>')
+    check("deck_json finds deck.json in DIR and in DIR/project", pv.deck_json(deck.parent) == deck / "deck.json"
+          and pv.deck_json(deck) == deck / "deck.json" and pv.deck_json(tmp) is None)
+    t = pv.build_deck(deck / "deck.json")
+    check("a deck is one plate: <main class=pv-deck>, the title, the slides in the order of deck.json",
+          pv.is_deck(t) and pv.title_of(t) == "A deck" and t.index("Slide B") < t.index("Slide A"))
+    check("a deck has its stylesheet and its local fonts, not the remote ones", "section { background: #fff }" in t
+          and "font-family:'Face'" in t and "data:font/woff2;base64," in t and "https://x/y" not in t)
+    check("the first slide of a section names the section", '<section data-chapter="Part one" id="b">' in t)
+    check("an image of the deck folder loads through pv; a data URI stays", 'data-pv-src="fig/p.png"' in t
+          and 'src="data:image/png;base64,AA"' in t)
+    check("a missing slide shows as a slide with the error", "This deck has no slide slides/gone.html" in t)
+    check("a plain plate is not a deck", not pv.is_deck((data / "demo.html").read_text()))
+    head = pv.plate_head(deck=True)
+    check("a deck gets the deck runtime and only the tokens of plate.css", "pv-deck-bar" in head and "XConnector" in head
+          and "--accent" in head and ".wrap {" not in head and ".wrap {" in pv.plate_head())
+    r = cli("deck", str(deck.parent), "--no-open")
+    did = r.stdout.split()[2] if r.returncode == 0 else ""
+    dm = pv.read_meta(did) if did else {}
+    check("plateview deck makes a plate that follows the folder, and may read it",
+          dm.get("deck") == str(deck / "deck.json") and dm.get("allow") == [str(deck)] and dm.get("base") == str(deck), r.stderr)
+    time.sleep(0.05)
+    (deck / "slides" / "a.html").write_text('<section id="a"><h2>Slide A, again</h2></section>')
+    dm2 = pv.refresh_deck(did, dm)
+    check("a change of a slide makes the plate again", "Slide A, again" in pv.plate_html(did).read_text()
+          and dm2["deck_state"] != dm["deck_state"])
+    check("no change: the plate stays as it is", pv.refresh_deck(did, dm2) is dm2)
+    pv.write_meta(did, dm2)
+    check("the export of a deck has the deck runtime", "pv-deck-bar" in pv.export_plate(did)[0])
+    r = subprocess.run([sys.executable, PLATEVIEW, str(deck.parent), "--no-open"], capture_output=True, text=True, env=env)
+    check("plateview DIR makes a plate of a deck folder", r.returncode == 0 and "plateview: deck " in r.stdout, r.stderr)
+    r = cli("update", did, str(data / "demo.html"))
+    check("plateview update with an HTML file: the plate no longer follows the deck", r.returncode == 0
+          and "deck" not in pv.read_meta(did), r.stderr)
+    r = cli("deck", str(tmp), "--no-open")
+    check("plateview deck of a folder without deck.json gives a clear error", r.returncode != 0 and "not a deck folder" in r.stderr, r.stderr)
 finally:
     subprocess.run([sys.executable, PLATEVIEW, "--stop"], capture_output=True, env=env)
     if os.environ.get("PLATEVIEW_KEEP_TMP"):

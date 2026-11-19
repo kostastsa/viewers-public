@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>pdfview</title>
-<link rel="icon" type="image/png" href="/kit/icons/pdf.png">
+<link rel="icon" type="image/png" href="/kit/icons/pdf.png?v=2">
 <link rel="stylesheet" href="/kit/kit.css">
 <link rel="stylesheet" href="/kit/pdfpages.css">
 <style>
@@ -38,19 +38,22 @@ header .grp{display:flex;gap:4px;align-items:center}
 #live.off{background:var(--warn)}
 
 /* ----- layout ----- */
-main{flex:1;display:grid;grid-template-columns:220px minmax(0,1fr) 320px;min-height:0}
+main{--navw:220px;flex:1;display:grid;position:relative;grid-template-columns:var(--navw) minmax(0,1fr) 320px;min-height:0}
 body.nonav main{grid-template-columns:0 minmax(0,1fr) 320px}
-body.noside main{grid-template-columns:220px minmax(0,1fr) 0}
+body.noside main{grid-template-columns:var(--navw) minmax(0,1fr) 0}
 body.nonav.noside main{grid-template-columns:0 minmax(0,1fr) 0}
-body.noside.chatopen main{grid-template-columns:220px minmax(0,1fr) 320px}
+body.noside.chatopen main{grid-template-columns:var(--navw) minmax(0,1fr) 320px}
 body.nonav.noside.chatopen main{grid-template-columns:0 minmax(0,1fr) 320px}
 nav{grid-column:1;border-right:1px solid var(--border);overflow:auto;padding:8px 6px;background:var(--panel);min-width:0}
 #pages{grid-column:2}
 aside{grid-column:3}  /* fixed columns: a hidden panel must not move the others */
-body.nonav nav,body.noside aside{display:none}
+body.nonav nav,body.nonav #navGrip,body.noside aside{display:none}
 nav h4,aside h4{margin:4px 6px 8px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);
   display:flex;align-items:center;gap:6px}
 nav h4 .grow,aside h4 .grow{flex:1}
+/* the width of the contents: drag their right border (as the border of the chat). It shows when the pointer is on it. */
+#navGrip{position:absolute;top:0;bottom:0;left:calc(var(--navw) - 3px);width:6px;z-index:5;cursor:ew-resize;touch-action:none}
+#navGrip:hover,#navGrip.drag{background-color:color-mix(in srgb,var(--accent) 35%,transparent)}
 nav ul{list-style:none;margin:0;padding:0 0 0 10px}
 nav>ul{padding-left:0}
 nav li a{display:block;padding:2px 6px;color:var(--fg);text-decoration:none;border-radius:3px;overflow:hidden;
@@ -213,6 +216,7 @@ body.chatopen aside{padding-bottom:calc(var(--kit-chat-h,min(62vh,540px)) + 40px
 </header>
 <main>
   <nav id="nav"><h4>Contents</h4><div id="outline"><div class="empty">…</div></div></nav>
+  <div id="navGrip" title="Drag to change the width of the contents. Double-click: the default width."></div>
   <div id="pages" class="kitPages" tabindex="0"></div>
   <aside id="side">
     <h4><span id="counts">Comments</span></h4>

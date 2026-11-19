@@ -1,6 +1,7 @@
 {
   "app": "pyview",
   "port_env": "PYVIEW_PORT",
+  "claude_env": "PYVIEW_CLAUDE",
   "tests": [
     "python3 tests/test_ops.py",
     "python3 tests/chat_test.py",

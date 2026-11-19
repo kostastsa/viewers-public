@@ -195,6 +195,18 @@ try:
         pg.locator("#chatMin").click()
         check("the minus button closes the panel", pg.locator("#chatOpen").is_visible() and not pg.locator("#chatBox").is_visible())
 
+        # the panel keys of the kit: ⌘/Ctrl+D for the comments, ⌘/Ctrl+E for the contents
+        has = lambda c: pg.evaluate("c => document.body.classList.contains(c)", c)
+        side0, toc0 = has("noside"), has("notoc")
+        pg.keyboard.press("Meta+d")
+        check("⌘/Ctrl+D changes the comments sidebar", has("noside") != side0 and has("notoc") == toc0)
+        pg.keyboard.press("Meta+d")
+        check("⌘/Ctrl+D changes the comments sidebar back", has("noside") == side0)
+        pg.keyboard.press("Meta+e")
+        check("⌘/Ctrl+E changes the contents", has("notoc") != toc0 and has("noside") == side0)
+        pg.keyboard.press("Control+e")
+        check("⌘/Ctrl+E changes the contents back", has("notoc") == toc0)
+
         # the hotkey
         pg.keyboard.press("Control+s")
         check("Ctrl+S opens the chat and focuses the text box", pg.locator("#chatBox").is_visible() and focused(pg))
@@ -223,6 +235,88 @@ try:
         check("the tab title gets a dot", pg.title().startswith("● "), pg.title())
         pg.evaluate("() => { document.hasFocus = () => true; dispatchEvent(new Event('focus')); }")
         check("coming back clears the pulse and the dot", not pg.locator("#chatBox.ready").count() and not pg.title().startswith("● "), pg.title())
+
+        # --- highlights: words with no comment (the button on a selection, the key, the menu of a highlight)
+        mod = "Meta" if sys.platform == "darwin" else "Control"
+        # each word is in a span, so one highlight has a mark for each word: count the highlights by data-t
+        highlights = "new Set([...document.querySelectorAll('#doc mark.c.highlight')].map(m => m.dataset.t)).size"
+        select = """what => {
+            for (const p of document.querySelectorAll('#doc p')) {
+              // mdview puts each word in a span: the words can be in more than one text node
+              const w = document.createTreeWalker(p, NodeFilter.SHOW_TEXT), nodes = [];
+              let text = '';
+              for (let n = w.nextNode(); n; n = w.nextNode()) { nodes.push([n, text.length]); text += n.data; }
+              const i = text.indexOf(what);
+              if (i < 0) continue;
+              const at = k => { const [n, o] = nodes.filter(([, o]) => o <= k).pop(); return [n, k - o]; };
+              const r = document.createRange(); r.setStart(...at(i)); r.setEnd(...at(i + what.length - 1));
+              r.setEnd(r.endContainer, r.endOffset + 1);
+              const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+              return true;
+            }
+            return false; }"""
+
+        def file_is(cond, secs=5):
+            for _ in range(secs * 10):
+                if cond(md.read_text()):
+                    return True
+                pg.wait_for_timeout(100)
+            return False
+
+        pg.locator("#chatMin").click()
+        md.write_text(ORIGINAL)
+        pg.wait_for_function("() => !document.querySelector('#doc mark.c') && document.querySelectorAll('#doc p').length === 2", timeout=10000)
+        pg.wait_for_timeout(500)
+        side = pg.evaluate("document.body.className")
+        pg.evaluate(select, "paragraph is short")
+        pg.locator("#hbtn").wait_for(state="visible", timeout=3000)
+        check("a selection shows Comment and Highlight", pg.locator("#cbtn").is_visible() and "Highlight" in pg.locator("#hbtn").inner_text())
+        pg.locator("#hbtn").click()
+        check("Highlight writes the words with no comment into the file",
+              file_is(lambda t: "The second {==paragraph is short==}.\n" in t and "{>>" not in t), md.read_text())
+        pg.wait_for_selector("#doc mark.c.highlight", timeout=5000)
+        check("the highlight covers only the selected words", "".join(pg.locator("#doc mark.c.highlight").all_inner_texts()) == "paragraph is short")
+        check("a highlight is green, not the color of a comment",
+              "90, 200, 110" in pg.locator("#doc mark.c.highlight").first.evaluate("e => getComputedStyle(e).backgroundColor"))
+        check("a highlight is not a comment in the sidebar", pg.locator("#threads .thread").count() == 0
+              and "open" not in pg.locator("#counts").inner_text())
+        pg.locator("#doc mark.c.highlight").first.click()
+        check("a click on a highlight opens its menu: Comment and Remove",
+              pg.locator(".hmenu button").all_inner_texts() == ["💬 Comment", "Remove"], str(pg.locator(".hmenu button").all_inner_texts()))
+        check("the click does not open or close the sidebar", pg.evaluate("document.body.className") == side)
+        pg.locator(".hmenu button", has_text="Remove").click()
+        check("Remove takes the highlight out of the file and keeps the words", file_is(lambda t: t == ORIGINAL), md.read_text())
+        pg.wait_for_function("() => !document.querySelector('#doc mark.c')", timeout=5000)
+
+        pg.evaluate(select, "paragraph is short")
+        pg.keyboard.press(f"{mod}+Shift+H")
+        check("⌘/Ctrl+Shift+H highlights the selection too", file_is(lambda t: "{==paragraph is short==}." in t), md.read_text())
+        pg.wait_for_selector("#doc mark.c.highlight", timeout=5000)
+        pg.evaluate(select, "is short")
+        pg.keyboard.press(f"{mod}+Shift+H")
+        pg.wait_for_function("() => document.getElementById('toastText').textContent.includes('overlaps a highlight')", timeout=3000)
+        check("a second highlight on the same words is refused", md.read_text().count("{==") == 1)
+        pg.evaluate("getSelection().removeAllRanges()")
+        pg.evaluate(select, "lemmas")
+        pg.keyboard.press(f"{mod}+Shift+H")
+        check("a second highlight in another paragraph", file_is(lambda t: "{==lemmas==}." in t), md.read_text())
+        pg.wait_for_function(f"() => ({highlights}) === 2", timeout=5000)
+        pg.locator("#doc mark.c.highlight", has_text="paragraph").first.click()
+        pg.locator(".hmenu button", has_text="Comment").click()
+        pg.locator("#dlg[open]").wait_for(timeout=3000)
+        pg.locator("#ta").fill("why short?")
+        pg.locator("#ta").press(f"{mod}+Enter")
+        check("Comment in the menu makes the highlight a comment",
+              file_is(lambda t: "{==paragraph is short==}{>>why short?<<}" in t), md.read_text())
+        pg.wait_for_selector("#doc mark.c.open", timeout=5000)
+        check("the comment has a card, and the other highlight has none",
+              pg.locator("#threads .thread").count() == 1 and pg.evaluate(f"() => {highlights}") == 1)
+        pg.once("dialog", lambda d: d.accept())
+        pg.locator("#threads .resall button").click()
+        check("Resolve all removes the comment and keeps the highlight",
+              file_is(lambda t: "{>>" not in t and "{==lemmas==}" in t and "{==paragraph" not in t), md.read_text())
+        listed = subprocess.run(["python3", MDVIEW, str(md), "--list"], env=env, capture_output=True, text=True).stdout
+        check("--list shows the highlight with the status highlight", '[highlight]  "lemmas"' in listed, listed)
 
         check("no errors in the console", not errs, str(errs))
         b.close()

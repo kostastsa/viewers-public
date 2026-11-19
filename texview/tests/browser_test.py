@@ -102,7 +102,8 @@ try:
               pg.eval_on_selector_all("#fileSel option", "os => os.filter(o => !o.dataset.doc).map(o => o.value)")[:2]
               == ["paper.tex", "paper.bib"])
         check("the editor shows the main file", pg.evaluate("S.cur") == "paper.tex" and "\\documentclass" in pg.evaluate("cm.getValue()"))
-        check("no build files next to the source", not (proj / "paper.aux").exists() and not (proj / "paper.pdf").exists())
+        check("no build files next to the source, only the copy of the PDF",
+              not (proj / "paper.aux").exists() and wait(lambda: (proj / "paper.pdf").is_file()))
 
         # ----- a double-click on the PDF opens or closes the source; SyncTeX: ⌘/Ctrl+click on the PDF goes to the source
         # line, ⌘/Ctrl+click on a line marks the PDF (texview#27)
@@ -399,6 +400,45 @@ try:
         pg.click("#pop button.on")
         check("the PDF comment is on line 25", wait(lambda: any(t["anchor"]["line"] == 25 and
                                                                 t["anchor"]["quote"] == "\\section{Main result}" for t in threads())), threads())
+
+        # ----- a box comment: ⌥ Option and a drag on a page; the comment goes on the source line of the area (texview#32)
+        n_before = len(threads())
+        bx = pg.evaluate("""(() => { const s = [...document.querySelectorAll('.page .textLayer span')]
+            .find(e => e.textContent.includes('Main result')); s.scrollIntoView({block: 'center'});
+            const r = s.getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom]; })()""")
+        pg.keyboard.down("Alt")
+        pg.mouse.move(bx[0] - 6, bx[1] - 4)
+        check("⌥ Option shows the cross cursor on a page", wait(lambda: pg.evaluate("document.body.classList.contains('altdown')"), 3))
+        pg.mouse.down()
+        pg.mouse.move(bx[2] + 6, bx[3] + 4, steps=4)
+        check("the drag draws a box", wait(lambda: pg.locator(".page .boxdraw").count() == 1, 3))
+        pg.mouse.up()
+        pg.keyboard.up("Alt")
+        pg.wait_for_selector("#pop textarea")
+        where = pg.inner_text("#pop .cwhere")
+        check("the comment box of a box names the source line and the area", "paper.tex:25" in where and "area" in where, where)
+        check("the box selects no text, and its frame stays while the comment box is open",
+              wait(lambda: pg.evaluate("getSelection().isCollapsed") and pg.locator(".page .boxdraw").count() == 1, 3))
+        pg.fill("#pop textarea", "A box comment")
+        pg.click("#pop button.on")
+        check("the box comment is on line 25", wait(lambda: len(threads()) == n_before + 1 and any(
+            t["anchor"]["line"] == 25 and t["msgs"][0]["text"] == "A box comment" for t in threads())), threads())
+        check("the frame goes with the comment box", wait(lambda: pg.locator(".page .boxdraw").count() == 0, 3))
+        pg.evaluate("op({op: 'resolve', thread: S.doc.threads.find(t => t.msgs[0].text === 'A box comment').id})")
+        wait(lambda: len(threads()) == n_before, 3)
+
+        # ----- ⌘/Ctrl+S with the comments hidden: the chat opens over the pages, and the comments stay hidden
+        pg.click("#sideBtn")
+        pg.evaluate("$('pages').focus()")
+        pg.keyboard.press(f"{MOD}+s")
+        check("⌘/Ctrl+S opens the chat", wait(lambda: pg.evaluate("!$('chatBox').hidden"), 3))
+        check("the comments stay hidden, and the chat is over the pages", pg.evaluate("""(() => {
+            return document.body.classList.contains('noside') && !$('sideBtn').classList.contains('on')
+                   && getComputedStyle($('side')).display === 'none'
+                   && $('pages').getBoundingClientRect().right > $('chatBox').getBoundingClientRect().right - 1; })()"""))
+        pg.click("#chatMin")
+        pg.click("#sideBtn")
+        check("the comments show again", wait(lambda: pg.evaluate("getComputedStyle($('side')).display") != "none", 3))
 
         # ----- the chat: Claude suggests a change; it shows in the source; Accept puts it in; Undo takes it back
         pg.click("#chatOpen")

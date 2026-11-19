@@ -489,6 +489,29 @@ def auto_on():
     return os.environ.get("VIEWKIT_AUTO_IMPROVE", "1") != "0"
 
 
+_user_path = None
+
+
+def user_path():
+    """PATH with the folders of the PATH of the login shell that it does not have, after its own folders (the tests put
+    their stand-in commands first). A server that a Finder app started (mdview.app) has only the PATH of launchd, and
+    its runs would not find uv, claude or conda. The server reads the shell one time (0.4 s), not each run: a run must
+    take the lock of its app at once, so that the notes run in the order they came."""
+    global _user_path
+    if _user_path is None:
+        have = [d for d in os.environ.get("PATH", "").split(os.pathsep) if d]
+        try:
+            r = subprocess.run([os.environ.get("SHELL") or "/bin/zsh", "-ilc", 'printf "\\n@@PATH@@%s\\n" "$PATH"'],
+                               stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=15)
+            line = next((x for x in r.stdout.splitlines() if x.startswith("@@PATH@@")), "")
+            shell = line[len("@@PATH@@"):].split(os.pathsep)
+        except (OSError, subprocess.SubprocessError):
+            shell = []
+        extra = [d for d in shell + [str(Path.home() / ".local/bin")] if d and d not in have and Path(d).is_dir()]
+        _user_path = os.pathsep.join(have + list(dict.fromkeys(extra)))
+    return _user_path
+
+
 def spawn(action, app, app_dir, n, *args, kitdir=None):
     """Start a run of improverun.py in the background. It does not stop when the server stops or restarts.
     `kitdir` is the live viewkit: a sandbox server imports the kit of its proposal, but its decisions must start the
@@ -499,7 +522,7 @@ def spawn(action, app, app_dir, n, *args, kitdir=None):
     cmd = [sys.executable, str(runner), action, app, str(Path(app_dir).resolve()), str(int(n)), *map(str, args)]
     with open(log, "ab") as f:
         sh = subprocess.Popen(["/bin/sh", "-c", '"$@" </dev/null &', "sh", *cmd], stdout=f, stderr=subprocess.STDOUT,
-                              stdin=subprocess.DEVNULL, start_new_session=True)
+                              stdin=subprocess.DEVNULL, start_new_session=True, env={**os.environ, "PATH": user_path()})
     sh.wait()
 
 

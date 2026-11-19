@@ -117,18 +117,21 @@ ping, port_in_use, ensure_server, stop_server = DAEMON.ping, DAEMON.port_in_use,
 
 MARK_RE = re.compile(r"^#\s?%%(?:[ \t]+(.*?))?[ \t]*$")
 MD_TAG_RE = re.compile(r"\[markdown\]", re.I)
+HIDE_TAG_RE = re.compile(r"\[hide\]", re.I)  # a code cell that shows its output, not its code
 HEADER_RE = re.compile(r"^#\s*pyview:\s*python\s*=\s*(.+?)\s*$")
 AUTHOR_RE = re.compile(r"^@([A-Za-z][\w-]*):[ \t]?(.*)$", re.S)
 
 
 class Cell:
     """A cell of the file. `marker` is the line of `# %%` (None for the text before the first marker,
-    which is cell 0). The body is lines[bs:be]; the cell, with its blank lines, ends at fe."""
-    __slots__ = ("idx", "kind", "title", "marker", "bs", "be", "fe")
+    which is cell 0). The body is lines[bs:be]; the cell, with its blank lines, ends at fe.
+    `hide` is True for a code cell with the tag [hide]: the page shows its output and not its code."""
+    __slots__ = ("idx", "kind", "title", "marker", "bs", "be", "fe", "hide")
 
-    def __init__(self, idx, kind, title, marker, bs, fe):
+    def __init__(self, idx, kind, title, marker, bs, fe, hide=False):
         self.idx, self.kind, self.title, self.marker, self.bs, self.fe = idx, kind, title, marker, bs, fe
         self.be = fe
+        self.hide = hide
 
 
 def split_lines(text):
@@ -143,13 +146,14 @@ def parse_cells(lines):
         if m:
             rest = m.group(1) or ""
             kind = "markdown" if MD_TAG_RE.search(rest) else "code"
-            marks.append((i, kind, MD_TAG_RE.sub("", rest).strip()))
+            hide = kind == "code" and bool(HIDE_TAG_RE.search(rest))
+            marks.append((i, kind, " ".join(HIDE_TAG_RE.sub("", MD_TAG_RE.sub("", rest)).split()), hide))
     cells = []
     first = marks[0][0] if marks else len(lines)
     cells.append(Cell(0, "code", "", None, 0, first))
-    for k, (i, kind, title) in enumerate(marks):
+    for k, (i, kind, title, hide) in enumerate(marks):
         end = marks[k + 1][0] if k + 1 < len(marks) else len(lines)
-        cells.append(Cell(k + 1, kind, title, i, i + 1, end))
+        cells.append(Cell(k + 1, kind, title, i, i + 1, end, hide))
     for c in cells:
         be = c.fe
         while be > c.bs and not lines[be - 1].strip():
@@ -220,8 +224,9 @@ def editor_text(lines, c):
     return "\n".join(decode_md(ls) if c.kind == "markdown" else ls)
 
 
-def marker_line(kind, title):
-    return "# %%" + (" [markdown]" if kind == "markdown" else "") + (" " + title if title else "")
+def marker_line(kind, title, hide=False):
+    tag = " [markdown]" if kind == "markdown" else " [hide]" if hide else ""
+    return "# %%" + tag + (" " + title if title else "")
 
 
 def python_header(lines):
@@ -357,12 +362,17 @@ def apply_op(text, op):
         if k != c.kind:
             ls = body(lines, c)
             lines[c.bs:c.be] = encode_md(ls) if k == "markdown" else decode_md(ls)
-            lines[c.marker] = marker_line(k, c.title)
+            lines[c.marker] = marker_line(k, c.title, c.hide)
     elif kind == "set-title":
         c = cell()
         if c.marker is None:
             raise ValueError("cell 0 has no marker, so it has no title")
-        lines[c.marker] = marker_line(c.kind, " ".join(str(op.get("title", "")).split()))
+        lines[c.marker] = marker_line(c.kind, " ".join(str(op.get("title", "")).split()), c.hide)
+    elif kind == "set-hide":
+        c = cell()
+        if c.marker is None or c.kind != "code":
+            raise ValueError("only a code cell with a marker can hide its code")
+        lines[c.marker] = marker_line(c.kind, c.title, bool(op.get("hide")))
     elif kind == "comment-add":
         target = op.get("line")
         if not isinstance(target, int) or not 0 <= target <= len(lines):
@@ -1063,7 +1073,7 @@ def doc_payload(app, p, rel):
             d["md"] = md_text(lines, c)
         else:
             nums, texts = code_lines(lines, c)
-            d["nums"], d["code"] = nums, texts
+            d["nums"], d["code"], d["hide"] = nums, texts, c.hide
         d["raw"] = editor_text(lines, c)
         if d["runnable"]:
             h = cell_hash(lines, c)
@@ -1241,7 +1251,7 @@ class Handler(BaseHTTPRequestHandler):
             elif e.suffix == ".py":
                 rows.append(f'<li><a href="/view?f={rel}">{html.escape(e.name)}</a></li>')
         return (f"<!doctype html><html><head><meta charset=utf-8><title>{html.escape(d.name or str(d))}/ · pyview</title>"
-                f'<link rel="icon" type="image/png" href="/kit/icons/py.png"><style>'
+                f'<link rel="icon" type="image/png" href="/kit/icons/py.png?v=2"><style>'
                 f"body{{font:15px system-ui,sans-serif;margin:32px;background:#fafaf7;color:#222}}"
                 f"@media (prefers-color-scheme:dark){{body{{background:#1c1c1e;color:#e8e8e8}}a{{color:#6ea0ff}}}}"
                 f"li{{list-style:none;margin:4px 0}}ul{{padding:0}}a{{color:#2f6fde;text-decoration:none}}</style></head>"
@@ -1258,6 +1268,11 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == "/api/ping":
             return self.send_json(200, {"app": "pyview", "pid": os.getpid(), "root": str(app.root),
                                         "started": STARTED, "code": str(Path(__file__).resolve())})
+        # The tab icons are open to all, like /api/ping (see serverkit.tab_icon).
+        a = serverkit.tab_icon(url.path, "py.png")
+        if a is not None:
+            return self.send(200, a[0], a[1]) if a else self.send(404, "Not found")
+
         t = q.pop("t", [""])[0]
         if t and TOKEN and hmac.compare_digest(t, TOKEN):
             rest = urlencode(q, doseq=True)

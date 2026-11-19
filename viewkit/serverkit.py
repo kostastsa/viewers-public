@@ -53,6 +53,20 @@ def kit_asset(name):
         return None
 
 
+def tab_icon(path, icon):
+    """The route of a tab icon: /favicon.ico (the icon of the app, ICON, for example "py.png") or /kit/icons/NAME.png.
+    It gives None if PATH is not such a route, else (bytes, content type), or () if the file is not there.
+    Each app calls it before it checks the access key. Safari loads the tab icon without the cookie, and with a 403
+    it shows a letter in place of the icon. The icons are fixed files of the kit, with no data of the user."""
+    if path == "/favicon.ico":
+        name = "icons/" + icon
+    elif path.startswith("/kit/icons/"):
+        name = path[len("/kit/"):]
+    else:
+        return None
+    return kit_asset(name) or ()
+
+
 def app_host(name):
     """The host name in the links of an app on this computer: NAME.localhost. macOS and the browsers send it to
     127.0.0.1. Each app has its own name, so Safari, which keeps one tab icon for each host name, shows the icon of the app."""

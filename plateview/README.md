@@ -4,6 +4,8 @@ Show **plates** in the browser. A plate is an HTML page that Claude writes, like
 
 **Install:** use `install.sh` (see the section Install in the README of `viewkit`). It installs all the viewers and their Claude Code skills, and builds the macOS apps.
 
+A plate can also be a **deck**: slides of 1920 × 1080 px that you show one at a time, with speaker notes. plateview makes the deck from a deck folder, and the deck follows the folder. See [Decks](#decks).
+
 Plates are temporary. A plate stays while the Claude session that made it runs, or while a tab shows it. Then plateview deletes it. **Keep** makes a plate permanent, and **Export** saves one HTML file with the data inside. ⌘/Ctrl+P saves a PDF of the plate.
 
 You can comment on a plate, chat with Claude about it, and let the Oracle answer the comments. See [Comments, chat and the Oracle](#comments-chat-and-the-oracle).
@@ -16,8 +18,10 @@ You can comment on a plate, chat with Claude about it, and let the Oracle answer
 | `shell.html`, `shell.js` | The frame around a plate: the bar (title, state, theme, Keep, Export, Delete, Undo, Comments), the sandboxed frame, the comments sidebar, the chat panel, the Oracle, and the dashboard of the notes. At `/`, the list of plates. |
 | `runtime.js` | The `pv` library inside a plate, and the bridge of the comments: it tells the frame what you select, and paints the marks of the comments. |
 | `improve.json` | The settings of the self-improving loop (`viewkit/improvekit.py`): the tests, the sample plate, and the files that go with a copy of a plate. |
-| `plate.css` | The default stylesheet of a plate. |
+| `plate.css` | The default stylesheet of a plate. A deck gets only its tokens (the colors and the fonts). |
+| `deck.js`, `deck.css` | The deck runtime: it shows the slides of a deck, the notes and the grid, and defines `<x-connector>` and `<x-shape>`. plateview adds it to a deck only. |
 | `examples/demo/` | An example plate (`demo.html`) and its files. The numbers are invented. |
+| `examples/deck/` | An example deck folder. Its slides read the data of `examples/demo/`. |
 | `tests/` | `test_ops.py` (no server) and `browser_test.py` (Playwright). |
 | `app/build.sh` | Builds `~/Applications/plateview.app`, so that Finder can open `.html` files with plateview (Open With). |
 | `../viewkit/` | The code that the viewers share. The server parts: the server life cycle and the network address (`serverkit.py`), the data reader (`datakit.py`), the chat run and the Oracle (`claudekit.py`), and the notes (`improvekit.py`). The page parts: the chat panel, the dashboard and the tab icon (`web/kit.js`, `web/kit.css`), the components (`web/components.js`, `web/components.css`), and the fonts (`web/vendor/fonts/`, IBM Plex). It must be next to `plateview`, as `~/tools/viewers/viewkit`. |
@@ -42,6 +46,8 @@ plateview new plate.html --allow ~/results/exp_a      make a plate and open it; 
 plateview plate.html                                  the same, and the plate may read the folder of plate.html
 plateview new - --allow DIR --title T <<'EOF'         the HTML from stdin, up to a line EOF
 plateview update ID plate.html                        change the HTML of a plate; the open tab shows it at once
+plateview deck DIR [--allow DIR2]                     make a deck from the deck folder DIR, and open it
+plateview DIR                                         the same, if DIR has deck.json (or project/deck.json)
 plateview list [--json]                               the plates and their state
 plateview open ID                                     open a plate in the browser
 plateview keep ID                                     make a plate permanent
@@ -173,6 +179,73 @@ pv.seg('#metric', {options: [['mse', 'MSE'], ['lpe', 'LPE']], value: 'mse', onCh
 | `h2 .tag` (`.tag.good`, `.tag.bad`) | A small label after a title |
 | `.note`, `footer` | Small notes |
 
+## Decks
+
+A deck is a plate of slides. You show one slide at a time, scaled to the window. plateview makes the deck from a **deck folder**. This is the layout of a claude.ai deck, so a deck that you download from claude.ai opens as it is.
+
+```
+my-deck/                      (or my-deck/project/)
+  deck.json                   the title, the order of the slides, the sections, the stylesheets, the fonts
+  deck.css                    the look of the slides
+  slides/cover.html           one <section> for each file
+  slides/results.html
+```
+
+```
+plateview deck ~/talks/my-deck --allow ~/results/exp_a
+```
+
+- **The deck follows the folder.** When you (or Claude) change a slide, the stylesheet or `deck.json`, the open tab shows the change on the same slide. Thus, edit the files of the folder, not the HTML of the plate.
+- **The deck may read** its folder, and the folders that you give with `--allow`. The paths in the slides are relative to the folder of `deck.json`.
+
+### deck.json
+
+| Field | What it is |
+|---|---|
+| `title` | The title of the deck |
+| `order` | The ids of the slides, in order. Slide `ID` is the file `slides/ID.html`. Without `order`, the files in name order. |
+| `sections` | `{"s1": {"description": "…", "start": "ID"}, …}`: the parts of the deck. The grid shows each description above the first slide of its part. |
+| `format.shared` | The stylesheets, relative to the deck folder or to the folder above it. Without it, `deck.css`. |
+| `faces` | The fonts: `{"k": {"family": "Inter", "src": "fonts/Inter.woff2"}}`. plateview puts a local font file (`.woff2`, `.woff`, `.ttf`, `.otf`) into the deck. A deck cannot load a font from the internet (`href`). Without a local file, the browser uses the next font in the CSS, or a font of the computer. |
+| `width`, `height` | The size of a slide in px. The default is 1920 × 1080. |
+
+### A slide
+
+```html
+<section id="results" data-transition="fade">
+  <h2>The best optimizer</h2>
+  <div id="stats"></div>
+  <div class="diagram" style="position:relative; width:900px; height:400px">
+    <x-connector x1="300" y1="200" x2="600" y2="200" head="end"></x-connector>
+  </div>
+  <aside>The speaker notes of this slide.</aside>
+  <script>pv.watch('../results/runs.csv', d => { /* draw the stat cards */ });</script>
+</section>
+```
+
+- **Size:** a slide is 1920 × 1080 px. Use px for sizes and positions. plateview scales the whole slide to the window.
+- **Margins:** the slide has `box-sizing: border-box` and `overflow: hidden`. Headings and paragraphs on a slide have no margins. Use `gap` and `padding`.
+- **Notes:** the text in `<aside>` is the speaker notes. They show under the slide when you push N.
+- **Transition:** `data-transition="fade"` or `"slide"`. Without it, the slide shows at once. A CSS animation of the deck (for example a class `.rise`) starts again each time that its slide shows.
+- **`<x-connector x1 y1 x2 y2 head dash width>`:** a line in the box of the nearest positioned element. `head` is `end`, `start`, `both` or `none`. `dash` is a dash pattern, for example `"10 8"`. The CSS `color` gives the color, and the CSS `border-width` (or `width`) gives the width.
+- **`<x-shape kind>`:** a filled shape. `kind` is `ellipse`, `circle`, `rounded`, `diamond` or `triangle`. Give it a size and a `background` in CSS.
+- **Live data:** a slide can use all the `pv` functions (see [The pv functions](#the-pv-functions)). Do not write numbers of the data into a slide. Tables, grids and charts of `pv` show twice as large on a slide (`--pv-zoom`).
+- **Images:** `<img src="fig/x.png">` with a path of the deck folder or of an allowed folder. plateview loads it through `pv`, so it also goes into Export.
+- **The look:** the stylesheet of the deck gives all of it. The tokens of `plate.css` (`--accent`, `--body`, `--display`, `--mono`, …) and the IBM Plex fonts are available.
+
+### Show a deck
+
+| Key | What it does |
+|---|---|
+| → ↓ Space PageDown | The next slide |
+| ← ↑ Shift+Space PageUp | The slide before |
+| Home, End | The first slide, the last slide |
+| N | The speaker notes, under the slide |
+| G, Esc | All slides in a grid. A click (or Enter) opens a slide. |
+| F | Full screen |
+
+The keys work when the focus is in the plate or in the frame around it. The bar under the slide has the same commands. You can comment on the words of a slide or of its notes. A click on a comment in the sidebar shows its slide. **Export** saves the deck as one HTML file that works without the server. ⌘/Ctrl+P makes a PDF with one slide on each page.
+
 ## Security
 
 - **The plate runs in a sandbox.** It has an opaque origin, no network (CSP `default-src 'none'`) and no pop-ups. It cannot reach the frame around it or the server. Thus it can show data only on your screen.
@@ -185,8 +258,8 @@ pv.seg('#metric', {options: [['mse', 'MSE'], ['lpe', 'LPE']], value: 'mse', onCh
 ## Tests
 
 ```
-python3 tests/test_ops.py                                   # plates, files, lifetime, export, comments, the preview copy, command line (port 8817)
-uv run --with playwright python tests/browser_test.py       # the plate, Export, the PDF, the comments, the chat, the Oracle, the dashboard (port 8815)
+python3 tests/test_ops.py                                   # plates, files, lifetime, export, comments, the preview copy, decks, command line (port 8817)
+uv run --with playwright python tests/browser_test.py       # the plate, Export, the PDF, the comments, the chat, the Oracle, the dashboard, a deck (port 8815)
 ```
 
 Each test uses its own state folder in `tests/tmp/` and deletes it at the end. To keep it, set `PLATEVIEW_KEEP_TMP=1`.

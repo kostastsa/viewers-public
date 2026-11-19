@@ -316,6 +316,84 @@ try:
         pg.wait_for_url(BASE + "/", timeout=8000)
         check("Delete removes the plate", pid not in plates())
 
+        # --- a deck: a plate of slides from a deck folder, which follows the folder
+        shutil.copytree(HERE.parent / "examples" / "deck", tmp / "deck")
+        shutil.copytree(HERE.parent / "examples" / "demo", tmp / "demo")
+        r = cli("deck", str(tmp / "deck"), "--allow", str(tmp / "demo"), "--no-open")
+        check("plateview deck makes a plate of a deck folder", r.returncode == 0 and "deck" in r.stdout, r.stderr)
+        did, durl = r.stdout.split()[2], r.stdout.strip().splitlines()[-1]
+        pg.set_viewport_size({"width": 1300, "height": 900})
+        pg.goto(durl)
+        dfr = pg.frame_locator("#frame")
+        dfr.locator(".pv-deck-bar").wait_for(timeout=15000)
+        n = lambda: dfr.locator(".pv-deck-bar .n").inner_text()
+
+        def at(k):  # wait until the deck shows slide k (a key goes to the frame and back: wait for its effect)
+            try:
+                dfr.locator(".pv-deck-bar .n", has_text=f"{k} / 5").wait_for(timeout=5000)
+            except Exception:
+                pass
+            return n() == f"{k} / 5"
+        check("the deck shows slide 1 of 5, one slide at a time", n() == "1 / 5" and dfr.locator(".pv-slot").count() == 5
+              and dfr.locator(".pv-slot:visible").count() == 1)
+        box = dfr.locator(".pv-slot.on").bounding_box()
+        check("the slide is scaled to the window, at 16:9", box and box["width"] < 1300 and abs(box["width"] / box["height"] - 16 / 9) < 0.02, box)
+        dfr.locator("body").press("ArrowRight")
+        check("→ in the plate shows the next slide", at(2), n())
+        check("x-connector draws its lines and arrow heads", dfr.locator(".pv-slot.on x-connector svg line").count() == 4
+              and dfr.locator(".pv-slot.on x-connector svg polygon").count() == 4)
+        pg.locator("#title").click()
+        pg.keyboard.press("ArrowRight")
+        check("→ in the frame also moves the deck", at(3), n())
+        dfr.locator(".pv-slot.on .stat").first.wait_for(timeout=8000)
+        check("a slide reads its numbers live from the data", "94.1" in dfr.locator(".pv-slot.on #stats").inner_text())
+        dfr.locator("body").press("n")
+        dfr.locator(".pv-deck-notes").wait_for(state="visible", timeout=5000)
+        check("N shows the speaker notes of the slide", dfr.locator(".pv-deck-notes").is_visible()
+              and "pv.watch" in dfr.locator(".pv-deck-notes aside.on").inner_text())
+        dfr.locator("body").press("g")
+        dfr.locator("main.pv-deck[data-mode=grid]").wait_for(timeout=5000)
+        check("G shows all slides in a grid", dfr.locator("main.pv-deck[data-mode=grid]").count() == 1
+              and dfr.locator(".pv-slot:visible").count() == 5)
+        dfr.locator(".pv-slot").nth(3).click()
+        dfr.locator(".pv-slot.on .pv-chart path.ln").first.wait_for(timeout=8000)
+        check("a click in the grid opens that slide", at(4) and dfr.locator("main.pv-deck[data-mode=slides]").count() == 1)
+        check("a chart on a slide draws its lines", dfr.locator(".pv-slot.on .pv-chart path.ln").count() == 3)
+        sl = tmp / "deck" / "slides" / "curves.html"
+        sl.write_text(sl.read_text().replace("Accuracy during training", "Accuracy while it trains"))
+        dfr.locator(".pv-slot.on h2", has_text="Accuracy while it trains").wait_for(timeout=10000)
+        check("a change of a slide file shows at once, on the same slide, with the notes open",
+              n() == "4 / 5" and dfr.locator(".pv-deck-notes").is_visible())
+        dfr.locator("body").press("End")
+        at(5)
+        ok = pg.frames[1].wait_for_function("() => { const i = document.querySelector('.pv-slot.on img'); return i && i.naturalWidth > 0 && i.src.startsWith('blob:'); }", timeout=8000)
+        check("an image of the deck loads through pv", bool(ok) and n() == "5 / 5")
+        cli("add", did, "A note on the diagram.", "--quote", "The set-up")
+        if pg.evaluate("() => document.body.classList.contains('noside')"):
+            pg.locator("#sideBtn").click()
+        pg.locator("#threads .thread", has_text="A note on the diagram").locator("q").wait_for(timeout=6000)
+        pg.locator("#threads .thread", has_text="A note on the diagram").locator("q").click()
+        check("a click on a comment shows its slide", at(2), n())
+        r = pg.request.get(f"{BASE}/api/export?p={did}")
+        dout = tmp / "deck-export.html"
+        dout.write_text(r.text())
+        pe = ctx.new_page()
+        reqs = []
+        pe.on("request", lambda q: reqs.append(q.url))
+        pe.goto(dout.as_uri())
+        pe.wait_for_selector(".pv-deck-bar", timeout=10000)
+        pe.keyboard.press("ArrowRight")
+        pe.keyboard.press("ArrowRight")
+        pe.wait_for_selector(".pv-deck-bar .n:text('3 / 5')", timeout=5000)
+        pe.wait_for_selector(".pv-slot.on .stat", timeout=8000)
+        check("the exported deck works from the disk, with its data", pe.locator(".pv-deck-bar .n").inner_text() == "3 / 5"
+              and "94.1" in pe.locator(".pv-slot.on").inner_text())
+        check("the exported deck loads nothing from anywhere", all(u.startswith(("file:", "blob:", "data:")) for u in reqs))
+        pe.emulate_media(media="print")
+        check("in print, the deck has one slide on each page, at full size",
+              pe.locator(".pv-slot:visible").count() == 5 and abs(pe.locator(".pv-slot").first.bounding_box()["width"] - 1920) < 2)
+        pe.close()
+
         # --- the rules of the server
         r = b.new_context().request.get(f"{BASE}/api/plates")
         check("a request without the access key is refused", r.status == 403, r.status)

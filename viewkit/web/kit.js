@@ -43,6 +43,23 @@ const kit = (() => {
     };
   }
 
+  // The panel keys, the same in all the viewers: ⌘/Ctrl+D shows or hides the comments, and ⌘/Ctrl+E shows or hides
+  // the contents. The kit sets them when the page loads it. The key clicks the button of the panel, so the app needs
+  // only the usual ids: `sideBtn` (the comments) and `navBtn` or `tocBtn` (the contents). An app that uses the key
+  // first (preventDefault) keeps it. On a Mac, Control+D and Control+E stay the text keys in a text box or an editor.
+  const PANEL_KEYS = {KeyD: ['sideBtn'], KeyE: ['navBtn', 'tocBtn']};
+  document.addEventListener('keydown', ev => {
+    const ids = PANEL_KEYS[ev.code];
+    if (!ids || !(ev.metaKey || ev.ctrlKey) || ev.shiftKey || ev.altKey || ev.defaultPrevented) return;
+    const t = ev.target;
+    if (ev.ctrlKey && !ev.metaKey && /Mac/.test(navigator.platform) && t && t.closest &&
+        t.closest('input, textarea, select, [contenteditable], .CodeMirror, .cm-editor')) return;
+    const btn = ids.map(id => document.getElementById(id)).find(b => b && !b.disabled);
+    if (!btn) return;
+    ev.preventDefault();
+    btn.click();
+  });
+
   // A small element maker for the kit. It sets plain text only (never HTML), so the apps can keep their own helpers.
   function h(tag, cls, text) {
     const e = document.createElement(tag);
@@ -348,7 +365,7 @@ const kit = (() => {
         if (!d.accounts || d.accounts.length < 2) { if (acct) acct.hidden = true; return; }
         if (!acct) {
           acct = h('select', 'kitAcct');
-          acct.title = 'The Claude Code account of the chat and the Oracle for this document. It changes at the next run.';
+          acct.title = 'The Claude Code account, or the local Ollama model, of the chat and the Oracle for this document. It changes at the next run.';
           acct.onchange = () => opts.account.post({account: acct.value})
             .then(r => { acct.value = r.account; }).catch(e => { err(e.message); loadAccount(); });
           $('chatNew').before(acct);
@@ -509,7 +526,10 @@ const kit = (() => {
   //   chat, oracle: Claude works (the chat or the Oracle): a cyan dot at the top right
   //   ready: an answer waits for you: a yellow dot at the top right (the chat panel and chatAttention set it)
   // Call kit.tab({app: 'md' | 'py' | 'pdf' | 'page' | 'plate' | 'tex'}) once, then kit.tab({...}) with the parts that change.
+  // Safari (WebKit) does not use a data: icon, and it does not show an icon that a script changes. It then shows a
+  // letter in place of the icon. So in Safari the tab keeps the <link rel="icon"> of the page (no badge, no dot).
   const TAB = {app: null, open: 0, chat: false, oracle: false, ready: false};
+  const SAFARI = /safari/i.test(navigator.userAgent) && !/chrome|chromium|crios|fxios|edg|android/i.test(navigator.userAgent);
   let tabLink = null, tabKey = '';
 
   function drawIcon(ctx, app) {
@@ -596,7 +616,7 @@ const kit = (() => {
   }
 
   function drawTab() {
-    if (!TAB.app) return;
+    if (!TAB.app || SAFARI) return;
     const base = baseIcon(TAB.app);
     if (base === 'loading') return;
     const busy = TAB.chat || TAB.oracle, key = [TAB.app, TAB.open, busy, TAB.ready].join();

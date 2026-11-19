@@ -1,0 +1,10 @@
+<section id="curves">
+<h2>Accuracy during training</h2>
+<div class="chart" id="curve"></div>
+<div class="foot"><span>plateview example deck</span><span>4 / 5</span></div>
+<aside>A pv.chart of curves.csv. On a slide, the charts and tables of pv show twice as large.</aside>
+<script>
+pv.chart('#curve', '../demo/curves.csv', {type: 'line', x: 'epoch', y: 'acc', color: 'optimizer', 'y-min': 60, 'y-max': 96,
+  err: 'acc_sd', height: 300, 'x-label': 'Epoch', 'y-label': 'Test accuracy (%)'});
+</script>
+</section>

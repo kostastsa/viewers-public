@@ -92,7 +92,7 @@ def claude_exe(m):
     """The claude command. A path in VIEWKIT_CLAUDE or in the variable of the app (manifest "claude_env") is used as it
     is: if it is not executable, the run stops (it never falls back to another claude)."""
     for var in ("VIEWKIT_CLAUDE", m.get("claude_env")):
-        exe = os.environ.get(var or "_")
+        exe = os.environ.get(var) if var else None  # never "_": the shell puts the last command (python3) there
         if exe:
             if not os.access(exe, os.X_OK):
                 raise Fail(f"{var}={exe} is not an executable file.")
@@ -123,7 +123,7 @@ def run_claude(m, prompt, cwd, tools, disallowed=(), add_dirs=(), doc=None):
                 if b.get("type") == "tool_use":
                     log("claude:", b.get("name"), claudekit.tool_summary(b))
     log("claude -p", prompt)
-    env = claudekit.clean_env(doc=doc)
+    env = claudekit.clean_env(doc=doc, local=False)  # the loop always uses Claude, not an Ollama model
     if TRACKER == "local":  # `gh` is the local tracker for Claude
         env["PATH"] = f"{KIT / 'bin'}{os.pathsep}{env.get('PATH', '')}"
         env["VIEWKIT_NOTES_REPO"] = REPO or ""
@@ -464,6 +464,19 @@ def ready_to_merge(repo, name):
         raise Fail(f"The live checkout of {name} has changes that are not committed. Commit them, then accept again.")
 
 
+def on_main(repo_dir, b):
+    """True when branch b has all of main (a fast-forward of main to b is possible)."""
+    return git(repo_dir, "merge-base", "--is-ancestor", "main", b, check=False).returncode == 0
+
+
+def fast_forward(repo_dir, b):
+    """Move main of repo_dir to branch b. False when main moved and b is not on top of it any more."""
+    if not on_main(repo_dir, b):
+        return False
+    git(repo_dir, "merge", "-q", "--ff-only", b)
+    return True
+
+
 def accept(app, live, n):
     m = ik.manifest(live)
     with app_lock(app):
@@ -477,22 +490,27 @@ def accept(app, live, n):
             ready_to_merge(live, app)
             if kit_repo:
                 ready_to_merge(KIT, "viewkit")
-            moved = False
-            for repo_dir, d, b in ((live, wt, branch),) + (((KIT, kwt, kb),) if kit_repo else ()):
-                if git(repo_dir, "merge-base", "--is-ancestor", "main", b, check=False).returncode != 0:
-                    ik.write_status(app, n, message="main changed: the run rebases the proposal.")
-                    if git(d, "rebase", "main", check=False).returncode != 0:
-                        git(d, "rebase", "--abort", check=False)
-                        raise Fail("main changed, and the proposal does not rebase on it. Use Change, or run /improve.")
-                    moved = True
-            if moved:
-                ik.write_status(app, n, state="accepting", message="The tests run again, after the rebase.")
-                ok, out = run_tests(app, m, w, wt, kit_changed, live)
-                if not ok:
-                    raise Fail("After the rebase on main, the tests fail:\n" + out[-800:])
-            if kit_repo:  # the kit first: the app can need the new kit
-                git(KIT, "merge", "-q", "--ff-only", kb)
-            git(live, "merge", "-q", "--ff-only", branch)
+            # main can move while the tests run (a merge, another accept): then the run rebases and tests again
+            for _ in range(3):
+                moved = False
+                for repo_dir, d, b in ((live, wt, branch),) + (((KIT, kwt, kb),) if kit_repo else ()):
+                    if not on_main(repo_dir, b):
+                        ik.write_status(app, n, message="main changed: the run rebases the proposal.")
+                        if git(d, "rebase", "main", check=False).returncode != 0:
+                            git(d, "rebase", "--abort", check=False)
+                            raise Fail("main changed, and the proposal does not rebase on it. Use Change, or run /improve.")
+                        moved = True
+                if moved:
+                    ik.write_status(app, n, state="accepting", message="The tests run again, after the rebase.")
+                    ok, out = run_tests(app, m, w, wt, kit_changed, live)
+                    if not ok:
+                        raise Fail("After the rebase on main, the tests fail:\n" + out[-800:])
+                # the kit first: the app can need the new kit
+                if (not kit_repo or fast_forward(KIT, kb)) and fast_forward(live, branch):
+                    break
+                log("accept: main changed during the tests")
+            else:
+                raise Fail("main changed during the tests three times. Click Accept again.")
         except Fail as e:
             ik.write_status(app, n, state="preview", message="Not merged.", error=str(e))
             return

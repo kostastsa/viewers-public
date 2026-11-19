@@ -407,6 +407,8 @@ const moveCell = (idx, dir) => op({type: 'move-cell', cell: idx, dir}).then(ok =
 const deleteCell = idx => op({type: 'delete-cell', cell: idx}, 'Cell deleted.');
 const setType = (idx, kind) => op({type: 'set-type', cell: idx, kind});
 const setTitle = (idx, title) => op({type: 'set-title', cell: idx, title});
+const setHide = (idx, hide) => op({type: 'set-hide', cell: idx, hide});
+const canHide = c => !!(c && c.idx && c.kind === 'code');
 
 function renameField(c) {
   const inp = el('input', 'rename');
@@ -448,6 +450,7 @@ function cellHead(c, th) {
   h.appendChild(el('span', 'count', c.kind === 'markdown' ? 'md' : running ? '[*]' : c.count ? `[${c.count}]` : '[ ]'));
   if (S.rename && S.rename.cell === c.idx) h.appendChild(renameField(c));
   else if (c.title) h.appendChild(el('span', 'title', esc(c.title)));
+  if (c.hide) h.appendChild(btn('code hidden', 'hid', 'Show the code of this cell (h)', () => setHide(c.idx, false)));
   if (running) h.appendChild(el('span', 'badge running', 'running'));
   else if (c.state === 'queued') h.appendChild(el('span', 'badge running', 'queued'));
   else if (c.edited) h.appendChild(el('span', 'badge edited', 'edited since run'));
@@ -465,6 +468,7 @@ function cellHead(c, th) {
     {label: 'Add code cell below', fn: () => addCell(c.idx, 'code')},
     {label: 'Add markdown cell below', fn: () => addCell(c.idx, 'markdown')},
     ...(c.idx && c.kind === 'code' ? [{label: 'Rename', fn: () => { S.rename = {cell: c.idx, text: c.title || ''}; render(); }}] : []),
+    ...(canHide(c) ? [{label: c.hide ? 'Show the code (h)' : 'Hide the code (h)', fn: () => setHide(c.idx, !c.hide)}] : []),
     ...(c.idx ? [{label: 'Move up', fn: () => moveCell(c.idx, -1)}, {label: 'Move down', fn: () => moveCell(c.idx, 1)},
       {label: c.kind === 'code' ? 'Change to markdown' : 'Change to code', fn: () => setType(c.idx, c.kind === 'code' ? 'markdown' : 'code')}] : []),
     ...(c.runnable ? [{label: 'Run this cell and all below', fn: () => runCells('below', c.idx)},
@@ -504,10 +508,10 @@ const sig = x => JSON.stringify(x);
 function cellSigs(c, th) {
   const lc = S.comp && S.comp.type === 'line' && S.comp.cell === c.idx ? S.comp.line : null;
   return {
-    head: sig([c.kind, c.title, c.state, c.count, c.ms, c.ok, c.edited, c.previous, c.runnable,
+    head: sig([c.kind, c.title, c.hide, c.state, c.count, c.ms, c.ok, c.edited, c.previous, c.runnable,
                !!(c.outputs && c.outputs.length), th.cell.length, !!(S.rename && S.rename.cell === c.idx), !!(S.doc.trusted && S.doc.python)]),
     comp: S.comp && S.comp.type === 'cell' && S.comp.cell === c.idx ? 'c' : '',
-    body: S.editing === c.idx ? 'editing'
+    body: S.editing === c.idx ? 'editing' : c.hide ? ''
       : sig([c.kind, c.kind === 'markdown' ? c.md : [c.code, c.nums], th.line.map(t => [t.id, t.line, t.status]), lc]),
     outs: c.kind === 'code' ? sig(c.outputs || []) : '',
   };
@@ -558,6 +562,7 @@ function fillCell(e, c) {
   if (c.state === 'running') cls.push('running');
   if (c.edited) cls.push('edited');
   if (c.previous) cls.push('previous');
+  if (c.hide) cls.push('hidecode');
   if (th.cell.length) cls.push('thr');
   e.className = cls.join(' ');
   let prev = null;
@@ -566,7 +571,10 @@ function fillCell(e, c) {
       let n = null;
       if (k === 'head') n = cellHead(c, th);
       else if (k === 'comp') n = sg.comp ? cellComposer(c) : null;
-      else if (k === 'body') { n = S.editing === c.idx ? S.editor : bodyEl(c, th); if (n.classList.contains('md')) S.math.push(n); }
+      else if (k === 'body') {  // a cell with the tag [hide] has no code part, only its editor
+        n = S.editing === c.idx ? S.editor : c.hide ? null : bodyEl(c, th);
+        if (n && n.classList.contains('md')) S.math.push(n);
+      }
       else if (c.kind === 'code') { if (p.outs) { syncOuts(p.outs, c.outputs || []); n = p.outs; } else n = outsEl(c); }
       if (p[k] !== n) {  // n is null for a part this cell does not have: add nothing (after(null) writes "null")
         if (p[k] && n) p[k].replaceWith(n);
@@ -961,6 +969,7 @@ document.addEventListener('keydown', ev => {
   else if (ev.key === 'b') { ev.preventDefault(); addCell(S.sel, 'code'); }
   else if (ev.key === 'm' && S.sel) setType(S.sel, 'markdown');
   else if (ev.key === 'y' && S.sel) setType(S.sel, 'code');
+  else if (ev.key === 'h' && canHide(cells[k])) setHide(S.sel, !cells[k].hide);
   else if (ev.key === 'Escape') { S.comp = null; render(); }
 });
 

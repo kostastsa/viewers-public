@@ -2,7 +2,8 @@
 """texview: read, edit and comment on a LaTeX document in the browser, next to its PDF, and ask Claude Code about it.
 
 texview compiles the document with latexmk (and SyncTeX) into ~/.cache/texview/build/, so the folder of the document
-stays clean. It compiles again when a source file changes. A double-click on the PDF opens or closes the source. A ⌘/Ctrl+click
+gets no build files. After each compile, it copies the PDF and its SyncTeX file next to the main file
+(TEXVIEW_COPY_PDF=0 stops this). It compiles again when a source file changes. A double-click on the PDF opens or closes the source. A ⌘/Ctrl+click
 on the PDF opens the source at that line, and a ⌘/Ctrl+click in the source shows the place in the PDF.
 
 The comments and the suggested changes are in a JSON file next to the main file, .texview/MAIN.tex.json:
@@ -37,7 +38,7 @@ TEXVIEW_PORT override these). It restarts itself when this file or a .py file of
 Security: every request needs the access key in ~/.cache/texview/token-PORT (readable only by you), which `texview`
 passes in the link it opens and the browser then keeps as a cookie. The server opens only the folders of the documents
 that you passed to `texview`. It reads and writes only text sources (.tex, .bib, .sty, ...) in the folder of the main
-file. Hidden files and folders are never read, listed or served.
+file, and it writes MAIN.pdf and MAIN.synctex.gz there (the copy of the build). Hidden files and folders are never read, listed or served.
 """
 import argparse
 import fcntl
@@ -70,6 +71,7 @@ ROOT = Path(os.environ.get("TEXVIEW_ROOT") or Path.home()).expanduser().resolve(
 PORT = int(os.environ.get("TEXVIEW_PORT") or 8770)
 STATE_DIR = Path.home() / ".cache" / "texview"
 BUILD_DIR = Path(os.environ.get("TEXVIEW_BUILD") or STATE_DIR / "build")
+COPY_PDF = os.environ.get("TEXVIEW_COPY_PDF", "1") != "0"  # copy the PDF and its SyncTeX file next to the main file
 LOG = STATE_DIR / "server.log"
 LOCK_DIR = STATE_DIR / "locks"
 SIDECAR_DIR = ".texview"  # next to the main file
@@ -830,11 +832,45 @@ class Project:
             self.proc = None
         logs = self.read_logs()
         code = proc.returncode
-        status = "ok" if code == 0 else ("error" if self.pdf().is_file() else "failed")
+        # latexmk with nothing to do after a compile with errors returns 0 and runs no TeX: the log keeps the errors.
+        # This occurs when a save and the watcher both ask for a compile (the second one waits, then has nothing to do).
+        status = "ok" if code == 0 and not logs["errors"] else ("error" if self.pdf().is_file() else "failed")
         if code != 0 and not logs["errors"]:
             tail = [x for x in out.splitlines() if x.strip()][-6:]
             logs["errors"] = [{"file": None, "line": None, "msg": "latexmk: " + " / ".join(tail)[-600:]}]
+        problem = self.copy_out() if COPY_PDF else None
+        if problem:
+            logs["warnings"] = [{"file": None, "line": None, "msg": problem}, *logs["warnings"]]
         return {"status": status, "output": out[-8000:], "code": code, **logs}
+
+    def copy_out(self):
+        """Copy <stem>.pdf and <stem>.synctex.gz of the build folder next to the main file, so the folder of the
+        document has the PDF that the page shows. A copy that has the size and the time of the build file stays.
+        Another tool (VS Code) can write its own PDF there: the next compile puts the PDF of texview back.
+        The copy is atomic (a hidden temporary file, then a rename). The result: None, or a message for the warnings."""
+        for name in (self.main.stem + ".pdf", self.main.stem + ".synctex.gz"):
+            src, dst = self.build / name, self.main.parent / name
+            try:
+                st = src.stat()
+            except OSError:
+                continue
+            try:
+                d = dst.stat()
+                if (d.st_size, d.st_mtime_ns) == (st.st_size, st.st_mtime_ns):
+                    continue
+            except OSError:
+                pass
+            tmp = dst.with_name(f".{name}.texview-{os.getpid()}.tmp")
+            try:
+                shutil.copy2(src, tmp)
+                os.replace(tmp, dst)
+            except OSError as e:
+                try:
+                    tmp.unlink()
+                except OSError:
+                    pass
+                return f"texview could not copy {name} next to the main file: {e.strerror or e}"
+        return None
 
     def tick(self):
         """The watcher: compile when a source file has changed since the last compile."""
@@ -1311,10 +1347,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(200, {"app": "texview", "pid": os.getpid(), "root": str(app.root),
                                         "started": STARTED, "code": str(Path(__file__).resolve())})
 
-        # The tab icons are open to all, like /api/ping: Safari loads the tab icon without the cookie.
-        if url.path == "/favicon.ico" or url.path.startswith("/kit/icons/"):
-            name = "icons/tex.png" if url.path == "/favicon.ico" else unquote(url.path[len("/kit/"):])
-            a = serverkit.kit_asset(name)
+        # The tab icons are open to all, like /api/ping (see serverkit.tab_icon).
+        a = serverkit.tab_icon(url.path, "tex.png")
+        if a is not None:
             return self.send(200, a[0], a[1]) if a else self.send(404, "Not found")
 
         # A link from the texview command carries the key as ?t=. Keep it as a cookie and reload without it.
@@ -1581,7 +1616,7 @@ class Handler(BaseHTTPRequestHandler):
             rows.append(f'<li><a href="/view?f={quote(self.app.rel(e))}">📄 {html.escape(e.name)}</a>{badge}</li>')
         return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>{html.escape(d.name or str(d))}/ · texview</title>
-<link rel="icon" type="image/png" href="/kit/icons/tex.png">
+<link rel="icon" type="image/png" href="/kit/icons/tex.png?v=2">
 <style>
 :root{{color-scheme:dark;--bg:#111214;--fg:#d6d9de;--muted:#80858d;--accent:#8a9bd6;--hl:#3a3420}}
 @media (prefers-color-scheme:light){{:root{{color-scheme:light;--bg:#fafaf7;--fg:#222;--muted:#666;--accent:#2f6fde;--hl:#ffe58a}}}}

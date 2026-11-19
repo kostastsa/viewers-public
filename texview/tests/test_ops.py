@@ -197,7 +197,37 @@ try:
         res = pr.compile(tv.tool("latexmk"))
         check("the sample compiles with no errors", res["status"] == "ok" and not res["errors"], res.get("errors"))
         check("the build goes to the build folder, not next to the source",
-              pr.pdf().is_file() and not (proj / "paper.pdf").exists() and not (proj / "paper.aux").exists())
+              pr.pdf().is_file() and not (proj / "paper.aux").exists() and not (proj / "paper.log").exists())
+        check("the PDF and the SyncTeX file go next to the source too (a copy of the build)",
+              (proj / "paper.pdf").read_bytes() == pr.pdf().read_bytes()
+              and (proj / "paper.synctex.gz").read_bytes() == (pr.build / "paper.synctex.gz").read_bytes())
+        check("no temporary file of the copy stays", not list(proj.glob(".*.texview-*.tmp")), list(proj.glob(".*")))
+        out = subprocess.run([tv.tool("synctex"), "view", "-i", f"41:0:{main}", "-o", str(proj / "paper.pdf")],
+                             capture_output=True, text=True, cwd=str(proj)).stdout
+        check("synctex finds line 41 in the copy next to the source (Skim, VS Code)", "Page:1" in out, out[:300])
+        (proj / "paper.pdf").unlink()
+        pr.compile(tv.tool("latexmk"))  # latexmk has nothing to do, but the copy is missing
+        check("a missing copy comes back at the next compile", (proj / "paper.pdf").is_file())
+        (proj / "paper.pdf").write_bytes(b"%PDF-1.5 a PDF of another tool")
+        pr.compile(tv.tool("latexmk"))
+        check("the next compile puts the PDF of texview over the PDF of another tool",
+              (proj / "paper.pdf").read_bytes() == pr.pdf().read_bytes())
+        tv.COPY_PDF = False
+        (proj / "plain.tex").write_text("\\documentclass{article}\n\\begin{document}\nplain\n\\end{document}\n")
+        prp = tv.Project(proj / "plain.tex")
+        prp.compile(tv.tool("latexmk"))
+        check("TEXVIEW_COPY_PDF=0: no copy next to the source", prp.pdf().is_file() and not (proj / "plain.pdf").exists())
+        tv.COPY_PDF = True
+        if os.geteuid() != 0:
+            (proj / "paper.pdf").unlink()
+            proj.chmod(0o555)  # a folder where texview cannot write
+            try:
+                res = pr.compile(tv.tool("latexmk"))
+            finally:
+                proj.chmod(0o755)
+            check("a copy that fails is a warning, not an error",
+                  res["status"] == "ok" and res["warnings"] and "could not copy paper.pdf" in res["warnings"][0]["msg"],
+                  res.get("warnings", [])[:1])
         check("inputs() finds the .bib file", any(p.name == "paper.bib" for p in pr.inputs()), pr.inputs())
         v = pr.view_at("paper.tex", 41)
         check("synctex view: a line has a page and boxes", v and v["page"] == 1 and v["boxes"], v)
@@ -209,6 +239,9 @@ try:
         check("a compile with an error: status error, the error at bad.tex:4",
               res["status"] == "error" and res["errors"] and res["errors"][0]["file"] == "bad.tex"
               and res["errors"][0]["line"] == 4, res.get("errors"))
+        res = prb.compile(tv.tool("latexmk"))  # latexmk has nothing to do and returns 0
+        check("a second compile with no change still says error (not Compiled)",
+              res["status"] == "error" and res["errors"], (res["status"], res.get("code")))
         r = cli("log", str(proj / "bad.tex"))
         check("texview log prints the error", "error: bad.tex:4: Undefined control sequence." in r.stdout, r.stdout)
     else:

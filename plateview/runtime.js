@@ -41,7 +41,7 @@
     if (ev.source !== parent) return;
     const m = ev.data;
     if (!m || m.pv !== 1) return;
-    if (m.id) {
+    if (m.id && !m.op) {  // a reply to ask() has no op (the message 'show' of a comment has an id too)
       const p = pending.get(m.id);
       if (!p) return;
       pending.delete(m.id);
@@ -70,7 +70,8 @@
 
   // ------------------------------------------------------------ errors go to the frame, so you see them
   const report = msg => { if (!BUNDLE) parent.postMessage({pv: 1, op: 'error', message: String(msg).slice(0, 600)}, '*'); };
-  addEventListener('error', e => report(e.message + (e.lineno ? ` (line ${e.lineno})` : '')));
+  // "ResizeObserver loop …" is a notice of the browser, not an error of the plate (a chart draws again in its resize)
+  addEventListener('error', e => { if (!/^ResizeObserver loop/.test(e.message || '')) report(e.message + (e.lineno ? ` (line ${e.lineno})` : '')); });
   addEventListener('unhandledrejection', e => report(e.reason && e.reason.message || e.reason));
 
   // ------------------------------------------------------------ data
@@ -378,6 +379,8 @@
         if (!mk) return;
         const target = mk.anchor.col != null ? findCell(mk.anchor) : ranges.get(mk.id);
         if (!target) return;
+        // a deck (deck.js) shows the slide of the comment first
+        document.dispatchEvent(new CustomEvent('pv:reveal', {detail: mk.anchor.col != null ? target : target.startContainer}));
         const r = target.getBoundingClientRect();
         if (r.top < 40 || r.bottom > innerHeight - 40) scrollBy({top: r.top - innerHeight / 3});
         if (mk.anchor.col != null) { target.classList.remove('flash'); void target.offsetWidth; target.classList.add('flash'); }

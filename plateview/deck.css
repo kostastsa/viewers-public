@@ -1,0 +1,90 @@
+/* plateview: the runtime stylesheet of a deck (a plate with <main class="pv-deck">). A deck gets the tokens of
+   plate.css, this file, and then its own stylesheet, which gives the look of the slides. deck.js puts each slide
+   (<section>) in a .pv-slot and sets --s, the scale of the slides. README.md, section "Decks", tells the rules. */
+html, body { margin: 0; height: 100% }
+body { background: var(--sunken); overflow: hidden; -webkit-font-smoothing: antialiased }
+
+/* the slides: soft defaults (the stylesheet of the deck wins), then the size and the scale (they always apply) */
+:where(.pv-deck section) { position: relative; overflow: hidden; box-sizing: border-box; margin: 0 }
+:where(.pv-deck section) :where(h1, h2, h3, h4, h5, h6, p, ul, ol, dl, figure, blockquote, pre) { margin: 0 }
+.pv-deck > .pv-slot > section { width: var(--w) !important; height: var(--h) !important; transform: scale(var(--s));
+  transform-origin: 0 0; flex: none }
+.pv-deck > .pv-slot { position: relative; width: calc(var(--w) * var(--s)); height: calc(var(--h) * var(--s));
+  overflow: hidden; flex: none }
+.pv-deck section > aside { display: none }   /* the speaker notes, until deck.js moves them to the notes panel */
+
+/* one slide at a time, centred, as large as the window lets it be */
+.pv-deck[data-mode="slides"] { position: fixed; inset: 0 0 var(--pv-below, 44px) 0; display: flex; align-items: center;
+  justify-content: center }
+.pv-deck[data-mode="slides"] > .pv-slot { display: none; box-shadow: 0 2px 18px rgba(0, 0, 0, .18) }
+.pv-deck[data-mode="slides"] > .pv-slot.on { display: block }
+.pv-slot.on.pv-in-fade { animation: pv-fade 380ms ease-out both }
+.pv-slot.on.pv-in-slide { animation: pv-slide 420ms cubic-bezier(.2, .7, .2, 1) both }
+.pv-slot.on.pv-in-slide.back { animation-name: pv-slide-back }
+@keyframes pv-fade { from { opacity: 0 } }
+@keyframes pv-slide { from { opacity: .2; transform: translateX(6%) } }
+@keyframes pv-slide-back { from { opacity: .2; transform: translateX(-6%) } }
+
+/* all slides in a grid (G or Esc): a click opens a slide */
+.pv-deck[data-mode="grid"] { position: fixed; inset: 0; overflow: auto; display: grid; align-content: start;
+  grid-template-columns: repeat(auto-fill, calc(var(--w) * var(--s))); justify-content: center; gap: 34px 22px;
+  padding: 28px 22px 80px }
+.pv-deck[data-mode="grid"] > .pv-slot { cursor: pointer; overflow: visible; border-radius: 4px;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, .16); outline: 3px solid transparent; outline-offset: 3px }
+.pv-deck[data-mode="grid"] > .pv-slot > section { border-radius: 4px }
+.pv-deck[data-mode="grid"] > .pv-slot.on { outline-color: var(--accent) }
+.pv-deck[data-mode="grid"] > .pv-slot::after { content: attr(data-n); position: absolute; left: 0; top: 100%;
+  margin-top: 5px; font: 500 12px var(--mono); color: var(--muted) }
+.pv-deck[data-mode="grid"] > .pv-slot[data-chapter]::before { content: attr(data-chapter); position: absolute;
+  left: 0; right: 0; bottom: 100%; margin-bottom: 5px; font: 600 12.5px var(--body); color: var(--fg);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.pv-deck[data-mode="grid"] section * { animation: none !important }
+
+/* the bar: the slide number, back and next, the notes, the grid and the full screen */
+.pv-deck-bar { position: fixed; left: 50%; bottom: 7px; transform: translateX(-50%); z-index: 40; display: flex;
+  align-items: center; gap: 2px; padding: 3px; border-radius: 8px; background: var(--surface);
+  border: 1px solid var(--line); box-shadow: var(--shadow); font: 13px var(--body); color: var(--fg); user-select: none }
+.pv-deck-bar button { border: 0; background: transparent; color: inherit; font: inherit; padding: 5px 10px;
+  border-radius: 6px; cursor: pointer; line-height: 1.2 }
+.pv-deck-bar button:hover { background: var(--hover) }
+.pv-deck-bar button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent) }
+.pv-deck-bar button:disabled { opacity: .35; cursor: default; background: transparent }
+.pv-deck-bar .n { font: 500 12.5px var(--mono); min-width: 64px; text-align: center; color: var(--muted) }
+.pv-deck-bar .sep { width: 1px; align-self: stretch; margin: 4px 3px; background: var(--line) }
+body.pv-deck-full .pv-deck-bar { opacity: 0; transition: opacity .3s }
+body.pv-deck-full .pv-deck-bar:hover { opacity: 1 }
+
+/* the speaker notes of the slide (N): a panel under the slide. Its words take comments, as the slides do. */
+.pv-deck-notes { position: fixed; left: 0; right: 0; bottom: 44px; height: var(--pv-notes, 0px); overflow: auto;
+  display: none; background: var(--surface); border-top: 1px solid var(--line); color: var(--fg);
+  font: 15px/1.55 var(--body); padding: 12px max(18px, calc(50% - 460px)) }
+body.pv-notes .pv-deck-notes { display: block }
+.pv-deck-notes > aside { display: none; white-space: pre-line }
+.pv-deck-notes > aside.on { display: block }
+.pv-deck-notes .empty { color: var(--muted); font-style: italic }
+.pv-deck-missing { font: 28px var(--body); color: var(--danger); padding: 80px }
+
+/* the elements of a slide: x-connector (a line, with an arrow head) and x-shape (a filled shape) */
+x-connector { position: absolute; left: 0; top: 0; width: 0; height: 0; border: 2px solid transparent;
+  box-sizing: content-box; color: currentColor; pointer-events: none }
+x-connector > svg { position: absolute; overflow: visible; width: 1px; height: 1px }
+x-shape { display: inline-block; flex: none; box-sizing: border-box }
+x-shape[kind="ellipse"], x-shape[kind="circle"] { border-radius: 50% }
+x-shape[kind="rounded"] { border-radius: 18% }
+x-shape[kind="diamond"] { clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%) }
+x-shape[kind="triangle"] { clip-path: polygon(50% 0, 100% 100%, 0 100%) }
+
+/* the tables, grids and charts of pv on a slide: twice as large, as the slide shows smaller than 1920 px */
+.pv-deck section :is(.pv-table, .pv-grid, .pv-chart) { zoom: var(--pv-zoom, 2) }
+
+/* print (the PDF of the print view): one slide on each page, at full size, with no notes and no bar */
+@media print {
+  html, body { height: auto; overflow: visible; background: none }
+  .pv-deck, .pv-deck[data-mode] { position: static; display: block; padding: 0; overflow: visible; --s: 1 !important }
+  .pv-deck > .pv-slot, .pv-deck[data-mode] > .pv-slot { display: block !important; box-shadow: none; outline: 0;
+    break-after: page; animation: none !important }
+  .pv-deck > .pv-slot::before, .pv-deck > .pv-slot::after { display: none }
+  .pv-deck-bar, .pv-deck-notes, #pv-toast { display: none !important }
+  * { animation: none !important; transition: none !important; -webkit-print-color-adjust: exact; print-color-adjust: exact }
+}
+@media (prefers-reduced-motion: reduce) { .pv-deck * , .pv-slot { animation: none !important; transition: none !important } }
