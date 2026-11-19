@@ -70,8 +70,14 @@
 
   // ------------------------------------------------------------ errors go to the frame, so you see them
   const report = msg => { if (!BUNDLE) parent.postMessage({pv: 1, op: 'error', message: String(msg).slice(0, 600)}, '*'); };
-  // "ResizeObserver loop …" is a notice of the browser, not an error of the plate (a chart draws again in its resize)
-  addEventListener('error', e => { if (!/^ResizeObserver loop/.test(e.message || '')) report(e.message + (e.lineno ? ` (line ${e.lineno})` : '')); });
+  // "ResizeObserver loop …" is a notice of the browser, not an error of the plate (a chart draws again in its resize).
+  // Safari gives this notice to the sandboxed frame as "Script error." with no line. The scripts of a plate are inline,
+  // so an error of the plate always has a line: "Script error." without a line never comes from the plate.
+  addEventListener('error', e => {
+    const m = e.message || '';
+    if (/^ResizeObserver loop/.test(m) || (/^Script error\.?$/.test(m) && !e.lineno)) return;
+    report(m + (e.lineno ? ` (line ${e.lineno})` : ''));
+  });
   addEventListener('unhandledrejection', e => report(e.reason && e.reason.message || e.reason));
 
   // ------------------------------------------------------------ data
