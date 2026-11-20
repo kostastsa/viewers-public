@@ -316,7 +316,7 @@ try:
         # main moves first: Change rebases the proposal on it (improverun.catch_up)
         (live / "UPSTREAM.txt").write_text("a commit on main after the proposal\n")
         sh("git", "-C", str(live), "add", "UPSTREAM.txt")
-        sh("git", "-C", str(live), "commit", "-q", "-m", "a commit on main")
+        sh("git", "-C", str(live), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "a commit on main")
         pv.locator(".kitPreview button", has_text="Change").click()
         pv.locator(".kitPreviewForm textarea").fill("Also make it blue.")
         pv.locator(".kitPreviewForm textarea").press("Enter")

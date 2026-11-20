@@ -89,6 +89,13 @@ try:
               and "94.1 ± 0.2" in fr.locator(".pv-table tbody tr").first.inner_text() and fr.locator(".pv-table td.best").count() == 3)
         check("the grid reads vision_grid.csv", fr.locator(".pv-grid tbody tr").count() == 10)
         check("the chart has three lines", fr.locator(".pv-chart path.ln").count() == 3)
+        check("the table has the howto box of its options (HTML, open)",
+              fr.locator(".pv-table .pv-howto summary").text_content().strip() == "How to read this table"
+              and fr.locator(".pv-table .pv-howto .howto-body p").count() == 2
+              and frame.evaluate("() => document.querySelector('.pv-table .pv-howto').open"))
+        check("the chart has the howto box (plain text in two paragraphs)",
+              fr.locator(".pv-chart .pv-howto summary").text_content().strip() == "How to read this chart"
+              and fr.locator(".pv-chart .pv-howto .howto-body p").count() == 2)
         imgs = frame.evaluate("() => [...document.querySelectorAll('.pv-figure img')].map(i => i.naturalWidth > 0 && i.src.startsWith('blob:'))")
         check("three figures as blob images, also the PDF one", imgs == [True, True, True], imgs)
         check("the stat cards come from the data", "94.1" in fr.locator(".kpis").inner_text())

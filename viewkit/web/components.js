@@ -106,7 +106,7 @@ const PV = (() => {
 
   // ------------------------------------------------------------ the table component
   // model: {key, columns: [{k, label, num, dec}], rows: [{key, cells: {k: cell}}]}, cell: {v, num, sd, html, text}
-  // o: {best: {k: 'max'|'min'}, sort: [k, dir], height, caption (node), wide (bool), full (bool), title}
+  // o: {best: {k: 'max'|'min'}, sort: [k, dir], height, caption (node), howto (node), wide (bool), full (bool), title}
   function tableWidget(host, model, o) {
     const T = {sort: o.sort ? o.sort[0] : null, dir: o.sort ? o.sort[1] : 1, hidden: new Set(o.hidden || []),
                filter: '', sel: null};
@@ -137,6 +137,7 @@ const PV = (() => {
     if (!o.full) bar.append(collBtn);
     box.append(bar, wrap);
     if (o.caption) { const c = el('div', 'tcap'); c.append(o.caption); box.append(c); }
+    addHowto(box, 'table', o.howto);
     if (o.wide) { host.classList.add('wide'); wideBtn.classList.add('on'); }
 
     const cols = () => model.columns.filter(c => !T.hidden.has(c.k));
@@ -362,11 +363,35 @@ const PV = (() => {
 
   function captionOf(e) {
     const frag = document.createDocumentFragment();
-    for (const c of [...e.childNodes]) if (!(c.nodeType === 1 && c.tagName === 'TABLE')) frag.append(c);
+    for (const c of [...e.childNodes]) {
+      if (c.nodeType === 1 && (c.tagName === 'TABLE' || c.classList.contains('howto'))) continue;
+      frag.append(c);
+    }
     const strong = frag.querySelector && frag.querySelector('strong');
     const hasText = [...frag.childNodes].some(n => n.textContent.trim());
     return {node: hasText ? frag : null, title: strong ? strong.textContent.replace(/\.$/, '') : ''};
   }
+
+  // "How to read this table / grid / chart": the text of a <div class="howto"> child of the block (pageview:
+  // a nested ::: howto block; plateview: the howto option). It shows under the caption, open, and a click closes it.
+  function howtoOf(e) {
+    const h = [...e.children].find(c => c.classList.contains('howto'));
+    if (!h || !h.textContent.trim()) return null;
+    const frag = document.createDocumentFragment();
+    frag.append(...h.childNodes);
+    h.remove();
+    return frag;
+  }
+  function howtoBox(kind, node) {
+    const d = el('details', 'pv-howto');
+    d.open = true;
+    d.append(el('summary', 'pv-ui', 'How to read this ' + kind));
+    const body = el('div', 'howto-body');
+    body.append(node);
+    d.append(body);
+    return d;
+  }
+  function addHowto(box, kind, node) { if (node) box.append(howtoBox(kind, node)); }
 
   // ------------------------------------------------------------ the grid (pivot) component
   function pivotWidget(host, d, e, key, full) {
@@ -439,6 +464,7 @@ const PV = (() => {
     box.append(bar, wrap);
     const cap = captionOf(e);
     if (cap.node) { const c = el('div', 'tcap'); c.append(cap.node); box.append(c); }
+    addHowto(box, 'grid', howtoOf(e));
     ttl.textContent = opt(e, 'title') || cap.title || '';
     if (e.classList.contains('wide')) host.classList.add('wide');
 
@@ -629,6 +655,7 @@ const PV = (() => {
     box.append(legend, svg, tip);
     const cap = captionOf(e);
     if (cap.node) { const c = el('div', 'tcap'); c.append(cap.node); box.append(c); }
+    addHowto(box, 'chart', howtoOf(e));
     svg.setAttribute('aria-label', cap.title || 'Chart');
     if (e.classList.contains('wide')) host.classList.add('wide');
     const tx = v => logX ? Math.log10(v) : v, ty = v => logY ? Math.log10(v) : v;
@@ -644,7 +671,10 @@ const PV = (() => {
       if (type === 'bar' || type === 'area') { ylo = Math.min(0, ylo); yhi = Math.max(0, yhi); }
       if (opt(e, 'y-min') != null) ylo = +opt(e, 'y-min');
       if (opt(e, 'y-max') != null) yhi = +opt(e, 'y-max');
-      if (logY) { ylo = Math.log10(Math.max(1e-300, ylo > 0 ? ylo : Math.min(...all.map(p => p.y).filter(v => v > 0)))); yhi = Math.log10(yhi); }
+      if (logY) {
+        ylo = Math.log10(Math.max(1e-300, ylo > 0 ? ylo : Math.min(...all.map(p => p.y).filter(v => v > 0)))); yhi = Math.log10(yhi);
+        if (type === 'bar' && opt(e, 'y-min') == null) ylo = Math.floor(ylo);  // bars start one decade down, so the smallest bar shows
+      }
       else { const pad = (yhi - ylo) * 0.04 || 1; if (opt(e, 'y-min') == null && !(type === 'bar' && ylo === 0)) ylo -= pad; if (opt(e, 'y-max') == null) yhi += pad; }
       let xlo = 0, xhi = 1;
       if (!catX) {
@@ -655,6 +685,8 @@ const PV = (() => {
       }
       const px = v => L + (tx(v) - xlo) / (xhi - xlo) * (W - L - R);
       const py = v => Tp + (1 - (ty(v) - ylo) / (yhi - ylo)) * (H - Tp - B);
+      const base = logY ? Math.pow(10, ylo) : Math.max(ylo, 0);  // the foot of bars and areas, in data units (ylo is log10 on a log axis)
+      const pyc = v => py(logY ? Math.max(v, base) : v);  // a log axis has no point at or below zero
       const band = cats ? (W - L - R) / cats.length : 0, cx = c => L + (cats.indexOf(String(c)) + 0.5) * band;
       // grid and axes
       const yt = logY ? niceTicks(Math.ceil(ylo), Math.floor(yhi), Math.max(1, Math.floor(yhi) - Math.ceil(ylo))).map(v => Math.pow(10, v)) : niceTicks(ylo, yhi, 5);
@@ -681,9 +713,9 @@ const PV = (() => {
         const nb = on.length || 1, bw = band * 0.8 / nb;
         on.forEach((s, si) => {
           for (const p of s.pts) {
-            const x = cx(p.x) - band * 0.4 + si * bw, y0 = py(Math.max(ylo, 0)), y1 = py(p.y);
+            const x = cx(p.x) - band * 0.4 + si * bw, y0 = py(base), y1 = py(p.y);
             sv('rect', {x: x + 1, y: Math.min(y0, y1), width: Math.max(1, bw - 2), height: Math.abs(y0 - y1), rx: 2, class: 'f' + s.c}, g);
-            if (p.e != null) sv('line', {x1: x + bw / 2, x2: x + bw / 2, y1: py(p.y - p.e), y2: py(p.y + p.e), class: 'err'}, g);
+            if (p.e != null) sv('line', {x1: x + bw / 2, x2: x + bw / 2, y1: pyc(p.y - p.e), y2: pyc(p.y + p.e), class: 'err'}, g);
           }
         });
       } else {
@@ -691,12 +723,12 @@ const PV = (() => {
           const pts = catX ? s.pts : [...s.pts].sort((a, b) => a.x - b.x);
           const X = p => catX ? cx(p.x) : px(p.x);
           if (pts.some(p => p.e != null) && type !== 'scatter') {
-            const up = pts.map(p => `${X(p).toFixed(1)} ${py(p.y + (p.e || 0)).toFixed(1)}`), dn = pts.map(p => `${X(p).toFixed(1)} ${py(p.y - (p.e || 0)).toFixed(1)}`).reverse();
+            const up = pts.map(p => `${X(p).toFixed(1)} ${py(p.y + (p.e || 0)).toFixed(1)}`), dn = pts.map(p => `${X(p).toFixed(1)} ${pyc(p.y - (p.e || 0)).toFixed(1)}`).reverse();
             sv('path', {d: 'M' + up.join('L') + 'L' + dn.join('L') + 'Z', class: 'band f' + s.c}, g);
           }
           if (type === 'scatter') { for (const p of pts) sv('circle', {cx: X(p), cy: py(p.y), r: 3.2, class: 'dot f' + s.c}, g); continue; }
           const d0 = pts.map((p, i) => (i ? 'L' : 'M') + X(p).toFixed(1) + ' ' + py(p.y).toFixed(1)).join('');
-          if (type === 'area' && pts.length) sv('path', {d: d0 + `L${X(pts[pts.length - 1]).toFixed(1)} ${py(Math.max(ylo, 0))}L${X(pts[0]).toFixed(1)} ${py(Math.max(ylo, 0))}Z`, class: 'band f' + s.c}, g);
+          if (type === 'area' && pts.length) sv('path', {d: d0 + `L${X(pts[pts.length - 1]).toFixed(1)} ${py(base)}L${X(pts[0]).toFixed(1)} ${py(base)}Z`, class: 'band f' + s.c}, g);
           sv('path', {d: d0, class: 'ln s' + s.c}, g);
           if (pts.length && pts.length < 40) for (const p of pts) sv('circle', {cx: X(p), cy: py(p.y), r: 2.2, class: 'f' + s.c}, g);
         }
@@ -959,14 +991,15 @@ const PV = (() => {
           const cap = captionOf(e);
           const model = modelOfData(d, e, src);
           const o = tableOptions(e, model);
-          e.replaceChildren(tableWidget(e, model, {...o, caption: cap.node, title: opt(e, 'title') || cap.title, wide: e.classList.contains('wide')}));
+          const howto = howtoOf(e);
+          e.replaceChildren(tableWidget(e, model, {...o, caption: cap.node, howto, title: opt(e, 'title') || cap.title, wide: e.classList.contains('wide')}));
         }, err => { e.replaceChildren(errorBox(err.message)); }));
       } else if (!ctx.keepTables) {
         const t = e.querySelector('table');
         if (!t) continue;
         const model = modelOfTable(t, 'table-' + (++n));
-        const o = tableOptions(e, model), cap = captionOf(e);
-        e.replaceChildren(tableWidget(e, model, {...o, caption: cap.node, title: opt(e, 'title') || cap.title, wide: e.classList.contains('wide')}));
+        const o = tableOptions(e, model), cap = captionOf(e), howto = howtoOf(e);
+        e.replaceChildren(tableWidget(e, model, {...o, caption: cap.node, howto, title: opt(e, 'title') || cap.title, wide: e.classList.contains('wide')}));
       }
     }
     for (const t of ctx.keepTables ? [] : [...root.querySelectorAll('table')]) {
@@ -999,26 +1032,34 @@ const PV = (() => {
 
   // One component from an options object, for pages that are code (plateview). kind: 'table', 'grid' or 'chart'.
   // d: the data, {columns, rows}. opts: the options of SYNTAX.md with the same names (for example best: 'acc:max',
-  // sd: 'acc:acc_sd'; a grid needs rows, columns and value), plus caption (text), title, wide, height and key.
+  // sd: 'acc:acc_sd'; a grid needs rows, columns and value), plus caption (text), howto (HTML or text: the box
+  // "How to read this table / grid / chart"), title, wide, height and key.
   // Returns the element of the component. host (an element) gets it as its only child.
   function make(kind, host, d, opts, ctx) {
     if (ctx) CTX = ctx;
     opts = opts || {};
     const e = el('div', 'table');
     for (const [k, v] of Object.entries(opts)) {
-      if (v == null || v === false || typeof v === 'object' || typeof v === 'function' || k === 'caption') continue;
+      if (v == null || v === false || typeof v === 'object' || typeof v === 'function' || k === 'caption' || k === 'howto') continue;
       e.setAttribute('data-' + k, v === true ? 'true' : String(v));
     }
     if (opts.wide) { e.classList.add('wide'); host.classList.add('wide'); }
     if (opts.caption) e.append(el('p', null, String(opts.caption)));
+    if (opts.howto) {  // HTML, a node, or plain text (paragraphs split by an empty line)
+      const h = el('div', 'howto');
+      if (opts.howto instanceof Node) h.append(opts.howto);
+      else if (/<[a-z]/i.test(opts.howto)) h.innerHTML = String(opts.howto);
+      else for (const para of String(opts.howto).split(/\n\s*\n/)) if (para.trim()) h.append(el('p', null, para.trim()));
+      e.append(h);
+    }
     const key = opts.key || opts.src || 'table';
     let box;
     if (kind === 'chart') box = chartWidget(host, d, e);
     else if (kind === 'grid' || (opts.rows && opts.columns)) box = pivotWidget(host, d, e, key, !!opts.full);
     else {
-      const model = modelOfData(d, e, key), o = tableOptions(e, model), cap = captionOf(e);
+      const model = modelOfData(d, e, key), o = tableOptions(e, model), cap = captionOf(e), howto = howtoOf(e);
       if (opts.height === 0 || opts.height === '0') o.height = 0;
-      box = tableWidget(host, model, {...o, caption: cap.node, title: opts.title || cap.title, wide: !!opts.wide, full: !!opts.full});
+      box = tableWidget(host, model, {...o, caption: cap.node, howto, title: opts.title || cap.title, wide: !!opts.wide, full: !!opts.full});
     }
     host.replaceChildren(box);
     if (box.pvRender) requestAnimationFrame(() => box.pvRender());  // the grid measures its header rows on screen

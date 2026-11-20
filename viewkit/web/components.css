@@ -34,7 +34,7 @@
 .tbar .seg button:first-of-type{border-radius:6px 0 0 6px;margin-left:0}
 .tbar .seg button:last-of-type{border-radius:0 6px 6px 0}
 .tbar .seg button.on{position:relative;z-index:1}
-.pv-table.collapsed .twrap,.pv-table.collapsed .tcap{display:none}
+.pv-table.collapsed .twrap,.pv-table.collapsed .tcap,.pv-table.collapsed .pv-howto{display:none}
 .pv-table.collapsed .tbar{border-bottom:0}
 .twrap{overflow:auto;max-height:520px}
 .pv-table table,.pv-grid table{border-collapse:separate;border-spacing:0;width:100%;font-size:13.5px;font-variant-numeric:tabular-nums}
@@ -107,6 +107,14 @@ td.flash{animation:flash 1.2s ease-out 2}
 .pv-chart .err{stroke:var(--fg);stroke-width:1.2;opacity:.6}
 .pv-chart .cursor{stroke:var(--muted);stroke-width:1;stroke-dasharray:3 3}
 .pv-chart .tcap{border-top:0;padding:4px 0 6px}
+/* ----- "How to read this table / grid / chart" (the howto block or option) ----- */
+.pv-howto{margin:8px 12px 12px;background:var(--sunken);border-radius:8px;padding:6px 14px 8px;font-size:14px;line-height:1.5}
+.pv-howto>summary{cursor:pointer;font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);
+  padding:2px 0;list-style-position:inside}
+.pv-howto>summary:hover{color:var(--fg)}
+.pv-howto .howto-body>*{margin:.4em 0}
+.pv-howto .howto-body>:last-child{margin-bottom:.1em}
+.pv-chart .pv-howto{margin:8px 0 4px}
 .s1{stroke:var(--c1)}.s2{stroke:var(--c2)}.s3{stroke:var(--c3)}.s4{stroke:var(--c4)}.s5{stroke:var(--c5)}.s6{stroke:var(--c6)}.s7{stroke:var(--c7)}.s8{stroke:var(--c8)}
 .f1{fill:var(--c1)}.f2{fill:var(--c2)}.f3{fill:var(--c3)}.f4{fill:var(--c4)}.f5{fill:var(--c5)}.f6{fill:var(--c6)}.f7{fill:var(--c7)}.f8{fill:var(--c8)}
 .pv-chart .tip{position:absolute;pointer-events:none;background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:5px 9px;

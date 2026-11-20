@@ -137,6 +137,24 @@ With `rows` and `columns`, a file in **long form** (one row per run) becomes a g
 
 Move the pointer on a chart to read the values. Click a name in the legend to hide its series.
 
+## How to read a table or a chart
+
+A `.table` block (with or without `src`), a grid and a `.chart` block can have a box with the title "How to read this table" (or "grid", or "chart"). Put a `::: howto` block in the block, and give the outer block more colons.
+
+```markdown
+:::: {.table src="runs.csv" best="acc:max"}
+**Table 1.** Test results after 50 epochs.
+
+::: howto
+Each row is one optimizer. Click a column name to sort the rows.
+
+The star (★) marks the best value in each column.
+:::
+::::
+```
+
+The box shows below the caption. It is open at the start, and a click on its title closes it. The ▾ button of a table closes the table and its box together. Write the text in Simplified Technical English (STE). Tell what one row, point, line or bar is, what the columns or axes show (with the units and the scale), and what to look for.
+
 ## Figures
 
 ```markdown

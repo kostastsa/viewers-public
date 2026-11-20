@@ -117,6 +117,31 @@ try:
               and pg.locator(".pv-chart .legend button").count() == 3)
         pg.locator(".pv-chart .legend button", has_text="SGD").click()
         check("a click on a legend name hides its line", pg.locator(".pv-chart path.ln").count() == 2)
+        logbar = pg.evaluate("""() => { const h = document.createElement('div'); h.style.width = '700px'; document.body.append(h);
+          PV.make('chart', h, {columns: ['k', 'v'], rows: [['a', 0.03], ['b', 0.5], ['c', 300]]}, {type: 'bar', x: 'k', y: 'v', 'log-y': true});
+          const hs = [...h.querySelectorAll('rect[class^=f]')].map(r => +r.getAttribute('height')); h.remove(); return hs; }""")
+        check("a bar chart with a log y axis draws its bars", len(logbar) == 3 and all(0 < v < 1e4 for v in logbar), logbar)
+        # --- "How to read this table / chart / grid" (the howto block)
+        hw = pg.evaluate("""sel => { const b = document.querySelector(sel + ' .pv-howto');
+          return b && {open: b.open, sum: b.querySelector('summary').textContent, n: b.querySelectorAll('.howto-body p').length,
+                       cap: b.closest('.pv-table').querySelector('.tcap').textContent}; }""", T1)
+        check("the table has its How to read box, open, with two paragraphs", hw and hw["open"]
+              and hw["sum"] == "How to read this table" and hw["n"] == 2, hw)
+        check("the howto text is not in the caption", hw and "Each row is one optimizer" not in hw["cap"]
+              and "Table 1." in hw["cap"], hw)
+        check("the chart has its How to read box", pg.locator(".pv-chart .pv-howto summary").first.text_content().strip()
+              == "How to read this chart")
+        made = pg.evaluate("""() => { const h = document.createElement('div'); document.body.append(h);
+          const d = {columns: ['m', 'd', 'v'], rows: [['a', 'x', 1], ['a', 'y', 2], ['b', 'x', 3], ['b', 'y', 4]]};
+          PV.make('grid', h, d, {rows: 'm', columns: 'd', value: 'v', howto: 'First paragraph.\\n\\nSecond paragraph.'});
+          const g = h.querySelector('.pv-howto'); const out = g && {sum: g.querySelector('summary').textContent,
+            ps: [...g.querySelectorAll('.howto-body p')].map(p => p.textContent), attr: h.querySelector('[data-howto]') !== null};
+          h.remove(); return out; }""")
+        check("PV.make: plain-text howto becomes paragraphs (a grid)", made and made["sum"] == "How to read this grid"
+              and made["ps"] == ["First paragraph.", "Second paragraph."] and not made["attr"], made)
+        pg.locator(T1 + " .tbar button[title='Collapse the table']").click()
+        check("a collapsed table hides its howto box", not pg.locator(T1 + " .pv-howto").is_visible())
+        pg.locator(T1 + " .tbar button[title='Collapse the table']").click()
         imgs = pg.evaluate("() => [...document.querySelectorAll('.pv-figs img')].map(i => i.complete && i.naturalWidth > 0)")
         check("three figures, all shown, also the PDF one", imgs == [True, True, True], imgs)
         check("tabs: three, the first shown", pg.locator(".pv-tabs .tablist button").count() == 3

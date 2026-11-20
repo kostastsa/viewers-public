@@ -25,15 +25,27 @@ AdamW gives the best test accuracy (94.1 %), and Lion is close (93.8 %). SGD is 
 
 The table reads [runs.csv](runs.csv). Click a column name to sort it. The ★ marks the best value of each column.
 
-::: {.table src="runs.csv" sd="acc:acc_sd loss:loss_sd" labels="optimizer: Optimizer | acc: Accuracy (%) | loss: Test loss | time: Epoch time (s) | notes: Notes" best="acc:max loss:min time:min" sort="acc:desc" dec="acc:1 loss:3 time:1"}
+:::: {.table src="runs.csv" sd="acc:acc_sd loss:loss_sd" labels="optimizer: Optimizer | acc: Accuracy (%) | loss: Test loss | time: Epoch time (s) | notes: Notes" best="acc:max loss:min time:min" sort="acc:desc" dec="acc:1 loss:3 time:1"}
 **Table 1.** Test results after 50 epochs. Each cell is mean ± standard deviation over 5 seeds.
+
+::: howto
+Each row is one optimizer. Each cell gives the mean ± the standard deviation of 5 seeds. Click a column name to sort the rows.
+
+The star (★) marks the best value in each column: the highest accuracy, the lowest loss and the shortest epoch time.
 :::
+::::
 
 ## Training curves
 
-::: {.chart src="curves.csv" type="line" x="epoch" y="acc" color="optimizer" err="acc_sd" x-label="Epoch" y-label="Test accuracy (%)" y-min=60 y-max=96}
+::::: {.chart src="curves.csv" type="line" x="epoch" y="acc" color="optimizer" err="acc_sd" x-label="Epoch" y-label="Test accuracy (%)" y-min=60 y-max=96}
 **Figure 1.** Test accuracy per epoch, mean ± sd of 5 seeds.
+
+::: howto
+Each line is one optimizer. The band around a line is ± one standard deviation of 5 seeds. The x axis is the epoch, and the y axis is the test accuracy in percent.
+
+Click a name in the legend to hide its line.
 :::
+:::::
 
 ## Figures
 

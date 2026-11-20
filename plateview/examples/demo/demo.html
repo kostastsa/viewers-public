@@ -50,6 +50,9 @@ const state = {which: 'all', band: 'sd'};
 function drawChart() {
   pv.chart('#chart', 'curves.csv', {type: 'line', x: 'epoch', y: 'acc', color: 'optimizer', 'y-min': 60, 'y-max': 96,
     err: state.band === 'sd' ? 'acc_sd' : null, 'x-label': 'Epoch', 'y-label': 'Test accuracy (%)',
+    howto: 'Each line is one optimizer. The band around a line is ± one standard deviation of 5 seeds. ' +
+           'The x axis is the epoch, and the y axis is the test accuracy in percent.\n\n' +
+           'Use the controls above the chart to hide SGD or the bands. Click a name in the legend to hide its line.',
     prepare: d => state.which === 'all' ? d : pv.fromRecords(pv.records(d).filter(r => r.optimizer !== 'SGD'), d.columns)});
 }
 pv.seg('#which', {options: [['all', 'All'], ['adaptive', 'Without SGD']], value: 'all', onChange: v => { state.which = v; drawChart(); }});
@@ -58,7 +61,10 @@ drawChart();
 
 pv.table('#table', 'runs.csv', {cols: 'optimizer,acc,loss,time,notes', sd: 'acc:acc_sd loss:loss_sd',
   labels: 'optimizer: Optimizer | acc: Accuracy (%) | loss: Test loss | time: Epoch (s) | notes: Notes',
-  best: 'acc:max loss:min time:min', sort: 'acc:desc', dec: 'acc:1 loss:3 time:1'});
+  best: 'acc:max loss:min time:min', sort: 'acc:desc', dec: 'acc:1 loss:3 time:1',
+  howto: '<p>Each row is one optimizer. Each cell gives the mean ± the standard deviation of 5 seeds. ' +
+         'Click a column name to sort the rows.</p><p>The star (★) marks the best value in each column: ' +
+         'the highest accuracy, the lowest loss and the shortest epoch time.</p>'});
 pv.grid('#grid', 'vision_grid.csv', {rows: 'model', columns: 'dataset', value: 'acc_mean', sd: 'acc_sd',
   'row-groups': 'family', 'col-groups': 'group', best: 'col:max', color: 'heat', summary: 'mean rank', height: 460});
 pv.figure('#f1', 'fig/confusion_adamw.png', {caption: '(a) Confusion matrix, AdamW'});

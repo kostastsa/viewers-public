@@ -165,6 +165,7 @@ pv.seg('#metric', {options: [['mse', 'MSE'], ['lpe', 'LPE']], value: 'mse', onCh
 - **`el`** is an element or a CSS selector.
 - **Options:** the options of tables, grids and charts have the names of `pageview/SYNTAX.md`, for example `cols`, `labels`, `sd`, `best`, `sort`, `dec`, `row-groups`, `color`, `height`. Write a name with a hyphen in quotes: `{'y-label': 'MSE'}`.
 - **More options:** `caption` and `title` (text), `wide` (true), and `prepare: d => d`, a function that changes the data first, for example a filter.
+- **How to read:** `howto` adds the box "How to read this table" (or "grid", or "chart") below the caption. Give HTML, or plain text where an empty line starts a new paragraph. The box is open at the start, and a click on its title closes it. For a chart that the plate draws itself, use the same markup: `<details class="pv-howto" open><summary>How to read this chart</summary><div class="howto-body">…</div></details>`.
 
 ### The classes of plate.css
 

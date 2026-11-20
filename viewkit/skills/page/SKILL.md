@@ -28,6 +28,13 @@ description: Make or change a pageview page, the local replacement for a claude.
 - **Mean and spread.** Keep the mean and the standard deviation in two columns, and join them with `sd="mean:sd"`. Mark the best values with `best="acc:max loss:min"` in a table, or `best="col:max"` in a grid.
 - **Charts from the same data.** Use `.chart` with `src`, `x`, `y` and `color`. Give `x-label` and `y-label` with units.
 - **Captions.** Start the text of a table or chart block with `**Table N.**` or `**Figure N.**`. Then write one sentence that tells what a cell or a line is.
+- **How to read.** Give each table, grid and chart a `::: howto` block in Simplified Technical English (STE). The section "How to read a table or a chart" of `SYNTAX.md` shows the block. In the text, tell:
+  - what one row, point, line or bar is,
+  - what the columns or the axes show, with the units and the scale,
+  - which controls change the view (the sort of a column, the legend),
+  - how to compare the values, and what to look for.
+
+  Check the texts with `python3 ~/.claude/skills/ste/scripts/check.py FILE`. Use the page, or a temporary `.md` file with the texts. The checker reads the technical nouns of the project from the file `.ste-terms` in the project. Fix each item that the checker shows. Keep an item only for a technical noun or for quoted text.
 - **Details out of the way.** Put settings, hardware and long notes in `.toggle` or `tabs` blocks.
 - **Wide tables.** Add `.wide` to a table with many columns.
 - **Widgets only when necessary.** Use a `widget` block only for an interactive view that the blocks cannot give. It has no network and no access to files. Keep it small.

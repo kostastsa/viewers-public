@@ -50,6 +50,13 @@ A deck is a plate of slides (1920 × 1080 px), with speaker notes. Use a deck wh
 
 ## Rules
 
+- **How to read.** Give each table, grid and chart a "How to read" text in Simplified Technical English (STE). Use the `howto` option of `pv.table`, `pv.grid` and `pv.chart`. In the text, tell:
+  - what one row, point, line or bar is,
+  - what the columns or the axes show, with the units and the scale,
+  - which controls change the view (filters, selectors, the sort of a column),
+  - how to compare the values, and what to look for.
+
+  For a chart that you draw, use the same box: `<details class="pv-howto" open><summary>How to read this chart</summary><div class="howto-body">…</div></details>`. Put the texts in a temporary `.md` file. Check them with `python3 ~/.claude/skills/ste/scripts/check.py FILE`. The checker reads the technical nouns of the project from the file `.ste-terms` in the project. Fix each item that the checker shows. Keep an item only for a technical noun or for quoted text.
 - **No data in the HTML.** Every number comes from a file through `pv.table`, `pv.grid`, `pv.chart`, `pv.watch`, `pv.data`, or `pv.json` and `pv.watchJSON` for a JSON file that is not a table. Write a transform (a filter, a mean, a join) in JavaScript, in `prepare` or in `pv.watch`.
 - **Nothing from the internet.** No external scripts, styles, fonts or images: the sandbox blocks them. The fonts are IBM Plex, already in the plate.
 - **Live.** Use `pv.watch(path, fn)` for parts that you draw yourself (for example the stat cards), so that they follow the file.
