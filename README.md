@@ -2,6 +2,8 @@
 
 Local viewers for documents, code and data, made to work with [Claude Code](https://claude.com/claude-code). Each viewer opens a file in the browser. You read the file and comment on it, and Claude answers the comments or the chat.
 
+> **Work in progress.** The viewers change frequently. New features come, and the current features can change. Each release has a version tag, from `v0.1` (see [Tags](https://github.com/kostastsa/viewers-public/tags)). To get the latest version, run `~/tools/viewers/install.sh --update`. To tell us about a problem or an idea, see [Problems and ideas](#problems-and-ideas).
+
 | Folder | What it opens | The comments |
 |---|---|---|
 | [`mdview`](mdview) | Markdown files (`.md`) | In the file, as CriticMarkup. Claude proposes changes as suggestions that you accept or reject. |

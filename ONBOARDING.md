@@ -4,6 +4,8 @@ Read this file if the user asks you to install the viewers. Do the steps in sequ
 
 The viewers are `mdview`, `pyview`, `pdfview`, `pageview`, `plateview` and `texview`. Each viewer shows a type of file in the browser. The user writes comments on the file, and Claude answers them.
 
+The viewers are a work in progress, with version tags from `v0.1`. They change frequently, and a function can change or stop. Tell the user this when you tell the plan.
+
 At the end of the procedure, these conditions apply:
 
 - The folder `~/tools/viewers` is a clone of this repository, or a link to a clone.

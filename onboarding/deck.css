@@ -78,3 +78,4 @@ table.keys td:first-child { width: 1%; white-space: nowrap; padding-right: 72px 
 
 /* print: no shadow (Firefox prints the blur as a band across the page) */
 @media print { .shot { box-shadow: none } }
+.cover .wip { font: 500 26px var(--mono); letter-spacing: 1px; color: #9AA6B2; margin-top: 30px }
