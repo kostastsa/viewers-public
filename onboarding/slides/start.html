@@ -1,0 +1,18 @@
+<section id="start" data-transition="fade">
+<h2>Install once, then open any file</h2>
+<pre class="cmd rise" style="--i:0"><span class="c"># install: git and Python 3.9 or newer</span>
+git clone https://github.com/kostastsa/viewers-public ~/tools/viewers
+~/tools/viewers/install.sh
+
+<span class="c"># open a file</span>
+mdview notes.md        pdfview paper.pdf      texview paper.tex
+pyview analysis.py     pageview page.md       plateview deck ~/tools/viewers/onboarding</pre>
+<div class="platforms rise" style="--i:1">
+<div class="card mac"><b>macOS</b>The viewers are made and tested on the Mac. The installer also makes apps that open files from Finder.</div>
+<div class="card"><b>Linux</b>They move easily: the same installer works. Get pandoc, poppler and latexmk from the package manager.</div>
+<div class="card"><b>Windows</b>Use WSL, as on Linux. A native port must replace the fcntl locks, the process groups and the installer.</div>
+</div>
+<p class="lede rise" style="--i:2; font-size:26px">Disclaimer: nobody tested the viewers on Linux or on Windows. ONBOARDING.md gives the steps as a guide.</p>
+<div class="foot"><span>The viewers</span><span>7 / 8</span></div>
+<aside>Run the install script one time. Then open a file with the command of its viewer. The last command opens this deck. The viewers are made for macOS. They use only the Python standard library and POSIX functions, so they move easily to Linux. On Windows, install them in WSL. A native Windows version needs other file locks, another way to stop the processes, and a PowerShell installer. ONBOARDING.md gives the details.</aside>
+</section>

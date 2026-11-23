@@ -12,6 +12,25 @@ At the end of the procedure, these conditions apply:
 - The external tools that the user needs are available.
 - Each viewer opens a sample file with no error.
 
+## Platforms
+
+The viewers are made and tested on macOS. They use only the Python standard library and POSIX functions. Thus, they move easily to Linux.
+
+**Disclaimer:** nobody tested the viewers on Linux or on Windows. The steps in this section are a guide, not a tested procedure.
+
+On Linux:
+
+- On Linux, use the same installer. It does not make the macOS apps that open files from Finder.
+- Install the external tools with the package manager of Linux, for example `sudo apt install pandoc poppler-utils latexmk`.
+
+Native Windows needs changes in the code:
+
+- Replace the file locks of `fcntl` with `msvcrt.locking`, or with a lock file.
+- Replace the process groups (`start_new_session` and `os.killpg`) with `CREATE_NEW_PROCESS_GROUP` and `taskkill /T`.
+- Write a PowerShell installer to replace `install.sh`. In a Windows virtual environment, the interpreter is `.venv\Scripts\python.exe`, not `.venv/bin/python`.
+
+On Windows, the easy solution is WSL (Windows Subsystem for Linux). Install the viewers in WSL as on Linux. WSL 2 forwards `localhost` to Windows, so the links open in the browser of Windows. If the browser does not open, copy the link that the command prints.
+
 ## Rules for the agent
 
 Tell the user the plan before you start. Get the approval of the user before each of these actions:
@@ -43,7 +62,8 @@ Use the output to find the next action:
 
 | Condition | Action |
 |---|---|
-| The system is not macOS (`Darwin`). | Tell the user that the viewers are tested only on macOS. Ask if you must continue. |
+| The system is Linux, or Linux in WSL. | Tell the user that the viewers are tested only on macOS, but that they move easily to Linux. Ask if you must continue. In step 4, use the package manager of Linux (see [Platforms](#platforms)). |
+| The system is Windows without WSL (`uname` shows `MINGW`, `MSYS` or `CYGWIN`, or it is not available). | Stop. Tell the user to use WSL, or to change the code first (see [Platforms](#platforms)). |
 | `git` is not available, or Python is older than 3.9. | Stop. The user must install these tools. |
 | `~/tools/viewers` does not exist. | Go to step 2. |
 | `~/tools/viewers` is a clone of `viewers-public`. | Skip step 2. In step 3, add the option `--update`. |

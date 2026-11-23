@@ -14,9 +14,13 @@ Local viewers for documents, code and data, made to work with [Claude Code](http
 
 Each viewer runs a small local server and opens a page in your browser. The viewers use the Python standard library only.
 
+![The Oracle answers a comment in mdview](onboarding/img/oracle.png)
+
+For a short tour, open the onboarding slides after the installation: `plateview deck ~/tools/viewers/onboarding`. The screenshots of the slides are in [`onboarding/img`](onboarding/img).
+
 ## Install
 
-The viewers are made and tested on macOS. You need git and Python 3.9 or newer.
+The viewers are made and tested on macOS. You need git and Python 3.9 or newer. Nobody tested them on Linux or on Windows: see the section "Platforms" in [`ONBOARDING.md`](ONBOARDING.md#platforms).
 
 ```
 git clone https://github.com/kostastsa/viewers-public ~/tools/viewers
