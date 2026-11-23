@@ -16,7 +16,7 @@ Each viewer runs a small local server and opens a page in your browser. The view
 
 ![The Oracle answers a comment in mdview](onboarding/img/oracle.png)
 
-For a short tour, open the onboarding slides after the installation: `plateview deck ~/tools/viewers/onboarding`. The screenshots of the slides are in [`onboarding/img`](onboarding/img).
+For a short tour, read the onboarding slides: [`onboarding.pdf`](onboarding.pdf). After the installation, you can also show them in plateview: `plateview deck ~/tools/viewers/onboarding`.
 
 ## Install
 
