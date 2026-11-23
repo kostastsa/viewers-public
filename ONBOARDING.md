@@ -186,6 +186,51 @@ In the page, the user selects text and writes a comment. Then the user clicks th
 
 The skills `/page` and `/plate` make a page or a plate from data files. The skill `/improve APP` works on the notes to a viewer. The `README.md` of each viewer gives the details and the security rules. The file `HOTKEYS.md` lists the keys.
 
+## Claude Code accounts in the chat
+
+The chat and the Oracle run Claude Code with an account. An account is a configuration folder of Claude Code, with its own login and its own conversations:
+
+- `~/.claude` is the account `claude`.
+- Each folder `~/.claude-NAME` is the account `claude-NAME`, for example `~/.claude-team`. The viewers find the folder if it contains `projects`, `.claude.json` or `settings.json`. To make an account, run `CLAUDE_CONFIG_DIR=~/.claude-team claude` and log in.
+- Each model of a local Ollama server is the account `ollama:MODEL`. The `README.md` of `viewkit` tells how to add the models of an SSH host.
+
+**One account:** the chat shows no selector. All the runs use `~/.claude`. If the shell that started the server had the variable `CLAUDE_CONFIG_DIR`, the runs use that folder.
+
+**Two accounts or more:** a selector shows before the **New** button of the chat. The selection applies to the chat and to the Oracle of that document. The viewers find the account of a document in this sequence:
+
+1. The account that you selected for this document.
+2. The last account that you selected, in all the documents. Thus, a selection is also the default of the documents that have no selection.
+3. The folder in `CLAUDE_CONFIG_DIR` of the shell that started the server.
+4. `~/.claude`.
+
+The selections are in `~/.config/viewkit/accounts.json`, and all the viewers use this file. A new selection applies from the next run (a chat message or an answer of the Oracle). You can change the account during a conversation. The viewers then copy the conversation to the new account, and the conversation continues.
+
+## Art in the margins
+
+`mdview` and `pageview` can show pale figures in the free margins at the left and the right of the page. The figures are your own images. The repository has no art. Thus, after the installation, the margins are empty.
+
+To add art:
+
+1. Make the folder `~/tools/viewers/viewkit/art/figures`. Git ignores the folder `art`. Thus, your images stay out of the repository. To keep the art in a different folder, set the variable `VIEWKIT_ART` to the folder that contains `figures`. Then restart the servers: `mdview --restart` and `pageview --restart`.
+2. Put each figure in `figures` as a PNG file with a transparent background. The viewer uses only the shape of the figure. It paints the shape in the accent color of the page. A line drawing or a silhouette gives the best result.
+3. Give each file a name like `oNNN-NN-mask.png`, for example `o001-01-mask.png`. The scores (see below) work only with names like this.
+4. Write the file `figures/manifest.json`. It is a list with one item for each figure: `id`, `kind` (`"organism"`), `w` and `h` (the size in pixels), and `mask` (the file name). This script writes the manifest for all the files `*-mask.png` in the folder:
+
+   ```bash
+   cd ~/tools/viewers/viewkit/art/figures && python3 - <<'EOF'
+   import json, struct, pathlib
+   man = []
+   for p in sorted(pathlib.Path(".").glob("*-mask.png")):
+       w, h = struct.unpack(">II", p.read_bytes()[16:24])  # the size in the PNG header
+       man.append({"id": p.name[:-len("-mask.png")], "kind": "organism", "w": w, "h": h, "mask": p.name})
+   pathlib.Path("manifest.json").write_text(json.dumps(man, indent=1))
+   EOF
+   ```
+
+5. Reload the page. The viewers read the folder at each page load.
+
+On the page, a click on a figure adds 1 to its score, and a double click subtracts 1. A figure with a higher score shows more frequently. The scores are in `figures/scores.json`, and all the viewers share them. You can also ask Claude Code to make the folder from your images.
+
 ## Updates
 
 ```bash

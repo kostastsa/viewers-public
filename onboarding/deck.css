@@ -68,3 +68,10 @@ table.keys td:first-child { width: 1%; white-space: nowrap; padding-right: 72px 
   font-size: 26px; line-height: 1.38; color: var(--k-soft) }
 .platforms .card b { display: block; font: 600 32px var(--display); color: var(--k-ink); margin-bottom: 8px }
 .platforms .card.mac { border-color: var(--k-accent); background: var(--k-accent-soft) }
+
+/* six short cards */
+.grid3x2 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 30px; margin-top: 10px }
+.grid3x2 .card { background: var(--k-card); border: 2px solid var(--k-line); border-radius: 16px; padding: 28px 32px;
+  font-size: 29px; line-height: 1.4; color: var(--k-soft); min-height: 250px; box-sizing: border-box }
+.grid3x2 .card b { display: block; font: 600 36px var(--display); color: var(--k-ink); margin-bottom: 12px }
+.grid3x2 code { font: 500 0.9em var(--mono); color: var(--k-ink); white-space: nowrap }

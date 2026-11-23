@@ -1,6 +1,34 @@
-{"title": "The viewers: onboarding",
- "order": ["cover", "documents", "code", "comments", "chat", "improve", "start", "keys"],
- "sections": {"s1": {"description": "The six viewers", "start": "cover"},
-              "s2": {"description": "Work with Claude", "start": "comments"},
-              "s3": {"description": "Get started", "start": "start"}},
- "format": {"shared": ["deck.css"]}}
+{
+ "title": "The viewers: onboarding",
+ "order": [
+  "cover",
+  "documents",
+  "code",
+  "comments",
+  "chat",
+  "improve",
+  "art",
+  "more",
+  "start",
+  "keys"
+ ],
+ "sections": {
+  "s1": {
+   "description": "The six viewers",
+   "start": "cover"
+  },
+  "s2": {
+   "description": "Work with Claude",
+   "start": "comments"
+  },
+  "s3": {
+   "description": "Get started",
+   "start": "start"
+  }
+ },
+ "format": {
+  "shared": [
+   "deck.css"
+  ]
+ }
+}
